@@ -138,7 +138,7 @@ export const ContractsTable = () => {
             <Download className="h-4 w-4" />
             تصدير
           </Button>
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => navigate('/admin/contracts/new')}>
             <FileText className="h-4 w-4" />
             عقد جديد
           </Button>
@@ -250,7 +250,7 @@ export const ContractsTable = () => {
                 <TableHead className="text-right">نوع الإعلان</TableHead>
                 <TableHead className="text-right">تاريخ الانتهاء</TableHead>
                 <TableHead className="text-right">مت��قي</TableHead>
-                <TableHead className="text-right">القيمة الإجمال��ة</TableHead>
+                <TableHead className="text-right">القيمة الإجمالية</TableHead>
                 <TableHead className="text-right">الحالة</TableHead>
                 <TableHead className="text-right">الإجراءات</TableHead>
               </TableRow>
@@ -273,7 +273,7 @@ export const ContractsTable = () => {
                         className="h-8 w-8 p-0"
                         onClick={() => {
                           const cn = String(contract.Contract_Number ?? contract['Contract Number'] ?? '');
-                          if (cn) navigate(`/admin/contracts?contract=${encodeURIComponent(cn)}`);
+                          if (cn) navigate(`/admin/contracts/edit?contract=${encodeURIComponent(cn)}`);
                         }}
                       >
                         <Eye className="h-4 w-4" />
@@ -284,7 +284,7 @@ export const ContractsTable = () => {
                         className="h-8 w-8 p-0"
                         onClick={() => {
                           const cn = String(contract.Contract_Number ?? contract['Contract Number'] ?? '');
-                          if (cn) navigate(`/admin/contracts?contract=${encodeURIComponent(cn)}`);
+                          if (cn) navigate(`/admin/contracts/edit?contract=${encodeURIComponent(cn)}`);
                         }}
                       >
                         <Edit className="h-4 w-4" />
