@@ -1,5 +1,5 @@
 import { useTheme } from "next-themes";
-import { Toaster as Sonner, toast } from "sonner";
+import { Toaster as Sonner, toast as sonnerToast } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
@@ -23,5 +23,36 @@ const Toaster = ({ ...props }: ToasterProps) => {
     />
   );
 };
+
+// Safe wrapper to avoid rendering [object Object] if callers pass an object
+function formatArg(arg: any) {
+  if (arg === undefined || arg === null) return arg;
+  if (typeof arg === 'string') return arg;
+  if (arg && typeof arg === 'object') {
+    if (typeof arg.message === 'string') return arg.message;
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      return String(arg);
+    }
+  }
+  return String(arg);
+}
+
+function makeSafe(fn: any) {
+  return (...args: any[]) => {
+    if (args.length === 0) return fn();
+    const first = args[0];
+    const rest = args.slice(1);
+    return fn(formatArg(first), ...rest);
+  };
+}
+
+const toast = ((...args: any[]) => makeSafe(sonnerToast)(...args)) as any;
+
+toast.success = makeSafe(sonnerToast.success);
+toast.error = makeSafe(sonnerToast.error);
+toast.loading = makeSafe(sonnerToast.loading);
+toast.dismiss = sonnerToast.dismiss.bind(sonnerToast);
 
 export { Toaster, toast };
