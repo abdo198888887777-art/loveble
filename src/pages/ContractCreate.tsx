@@ -4,11 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/sonner';
-import { Search, Filter, Calendar, User, DollarSign, X } from 'lucide-react';
+import { Search, Calendar, User, DollarSign, X } from 'lucide-react';
 import { loadBillboards } from '@/services/billboardService';
 import type { Billboard } from '@/types';
 import { createContract } from '@/services/contractService';
 import { useNavigate } from 'react-router-dom';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { supabase } from '@/integrations/supabase/client';
+import { getPriceFor, CustomerType } from '@/data/pricing';
 
 export default function ContractCreate() {
   const navigate = useNavigate();
@@ -17,6 +21,11 @@ export default function ContractCreate() {
 
   // selection
   const [selected, setSelected] = useState<string[]>([]);
+
+  // customers combobox
+  const [customers, setCustomers] = useState<string[]>([]);
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState('');
 
   // filters
   const [q, setQ] = useState('');
@@ -47,6 +56,21 @@ export default function ContractCreate() {
     })();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from('Contract').select('"Customer Name"');
+        if (!error && Array.isArray(data)) {
+          const list = Array.from(new Set(((data as any[]) ?? []).map((r: any) => r['Customer Name']).filter(Boolean)));
+          list.sort((a, b) => String(a).localeCompare(String(b), 'ar'));
+          setCustomers(list as string[]);
+        }
+      } catch (e) {
+        console.warn('load customers failed');
+      }
+    })();
+  }, []);
+
   // derive cities and sizes
   const cities = useMemo(() => Array.from(new Set(billboards.map(b => b.city || b.City))).filter(Boolean) as string[], [billboards]);
   const sizes = useMemo(() => Array.from(new Set(billboards.map(b => b.size || b.Size))).filter(Boolean) as string[], [billboards]);
@@ -61,13 +85,20 @@ export default function ContractCreate() {
     setEndDate(iso);
   }, [startDate, durationMonths]);
 
-  // estimated price
+  // estimated price based on pricing tiers
   const estimatedTotal = useMemo(() => {
     const months = Number(durationMonths || 0);
+    if (!months) return 0;
     const sel = billboards.filter(b => selected.includes(String(b.ID)));
-    const sum = sel.reduce((acc, b) => acc + (Number(b.price) || 0), 0);
-    return sum * months;
-  }, [billboards, selected, durationMonths]);
+    return sel.reduce((acc, b) => {
+      const size = (b.size || (b as any).Size || '') as string;
+      const level = (b.level || (b as any).Level) as any;
+      const price = getPriceFor(size, level, pricingCategory as CustomerType, months);
+      if (price !== null) return acc + price;
+      const monthly = Number((b as any).price) || 0;
+      return acc + monthly * months;
+    }, 0);
+  }, [billboards, selected, durationMonths, pricingCategory]);
 
   const filtered = useMemo(() => {
     return billboards.filter((b) => {
@@ -129,25 +160,34 @@ export default function ContractCreate() {
                 <p className="text-muted-foreground">لم يتم اختيار أي لوحة بعد</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {billboards.filter(b => selected.includes(String(b.ID))).map((b) => (
-                    <Card key={b.ID} className="overflow-hidden">
-                      <CardContent className="p-0">
-                        {b.image && (
-                          <img src={b.image} alt={b.name || b.Billboard_Name} className="w-full h-36 object-cover" />
-                        )}
-                        <div className="p-3 flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-semibold">{b.name || b.Billboard_Name}</div>
-                            <div className="text-xs text-muted-foreground">{b.location || b.Nearest_Landmark}</div>
-                            <div className="text-xs">الحجم: {b.size || b.Size} • {b.city || b.City}</div>
+                  {billboards.filter(b => selected.includes(String(b.ID))).map((b) => {
+                    const months = Number(durationMonths || 0);
+                    const size = (b.size || (b as any).Size || '') as string;
+                    const level = (b.level || (b as any).Level) as any;
+                    const price = months ? getPriceFor(size, level, pricingCategory as CustomerType, months) : null;
+                    const fallback = (Number((b as any).price) || 0) * (months || 1);
+                    const totalForBoard = price !== null ? price : fallback;
+                    return (
+                      <Card key={b.ID} className="overflow-hidden">
+                        <CardContent className="p-0">
+                          {b.image && (
+                            <img src={b.image} alt={b.name || b.Billboard_Name} className="w-full h-36 object-cover" />
+                          )}
+                          <div className="p-3 flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold">{b.name || b.Billboard_Name}</div>
+                              <div className="text-xs text-muted-foreground">{b.location || b.Nearest_Landmark}</div>
+                              <div className="text-xs">الحجم: {b.size || b.Size} • {b.city || b.City}</div>
+                              <div className="text-xs font-medium mt-1">السعر: {totalForBoard.toLocaleString('ar-LY')} د.ل {months ? `/${months} شهر` : ''}</div>
+                            </div>
+                            <Button size="sm" variant="destructive" onClick={() => removeSelected(String(b.ID))}>
+                              <X className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <Button size="sm" variant="destructive" onClick={() => removeSelected(String(b.ID))}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -232,12 +272,63 @@ export default function ContractCreate() {
         <div className="w-full lg:w-[360px] space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> بيانات الزبون</CardTitle>
+              <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> بيانات الزبو��</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <label className="text-sm">اسم الزبون *</label>
-                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="اسم الزبون" />
+                <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {customerName ? customerName : 'اختر أو اكتب اسم الزبون'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="ابحث أو اكتب اسم جديد" value={customerQuery} onValueChange={setCustomerQuery} />
+                      <CommandList>
+                        <CommandEmpty>
+                          <Button variant="ghost" className="w-full justify-start" onClick={() => {
+                            if (customerQuery.trim()) {
+                              const name = customerQuery.trim();
+                              setCustomerName(name);
+                              setCustomers((prev) => prev.includes(name) ? prev : [name, ...prev]);
+                              setCustomerOpen(false);
+                              setCustomerQuery('');
+                            }
+                          }}>
+                            إضافة "{customerQuery}" كعميل جديد
+                          </Button>
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {customers.map((c) => (
+                            <CommandItem key={c} value={c} onSelect={() => {
+                              setCustomerName(c);
+                              setCustomerOpen(false);
+                              setCustomerQuery('');
+                            }}>
+                              {c}
+                            </CommandItem>
+                          ))}
+                          {customerQuery && !customers.includes(customerQuery.trim()) && (
+                            <CommandItem
+                              value={`__add_${customerQuery}`}
+                              onSelect={() => {
+                                const name = customerQuery.trim();
+                                setCustomerName(name);
+                                setCustomers((prev) => prev.includes(name) ? prev : [name, ...prev]);
+                                setCustomerOpen(false);
+                                setCustomerQuery('');
+                              }}
+                            >
+                              إضافة "{customerQuery}" كعميل جديد
+                            </CommandItem>
+                          )}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <label className="text-sm">نوع الإعلان</label>
@@ -278,7 +369,7 @@ export default function ContractCreate() {
               </div>
               <div>
                 <label className="text-sm">تاريخ النهاية</label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <Input type="date" value={endDate} readOnly disabled />
               </div>
             </CardContent>
           </Card>
@@ -288,7 +379,7 @@ export default function ContractCreate() {
               <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> التكلفة</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="text-sm text-muted-foreground">تقدير تلقائي: {estimatedTotal.toLocaleString('ar-LY')} د.ل</div>
+              <div className="text-sm text-muted-foreground">تقدير تلقائي حسب الفئة والمدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل</div>
               <Input type="number" value={rentCost} onChange={(e) => setRentCost(Number(e.target.value))} placeholder="تكلفة العقد (اختياري)" />
               <Button className="w-full" onClick={submit}>إنشاء العقد</Button>
               <Button variant="outline" className="w-full" onClick={() => navigate('/admin/contracts')}>إلغاء</Button>
