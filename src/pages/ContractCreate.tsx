@@ -41,6 +41,8 @@ export default function ContractCreate() {
   const [durationMonths, setDurationMonths] = useState<number>(3);
   const [endDate, setEndDate] = useState('');
   const [rentCost, setRentCost] = useState<number>(0);
+  const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
+  const [discountValue, setDiscountValue] = useState<number>(0);
 
   useEffect(() => {
     (async () => {
@@ -100,6 +102,13 @@ export default function ContractCreate() {
     }, 0);
   }, [billboards, selected, durationMonths, pricingCategory]);
 
+  const baseTotal = useMemo(() => (rentCost && rentCost > 0 ? rentCost : estimatedTotal), [rentCost, estimatedTotal]);
+  const discountAmount = useMemo(() => {
+    if (!discountValue) return 0;
+    return discountType === 'percent' ? (baseTotal * Math.max(0, Math.min(100, discountValue)) / 100) : Math.max(0, discountValue);
+  }, [discountType, discountValue, baseTotal]);
+  const finalTotal = useMemo(() => Math.max(0, baseTotal - discountAmount), [baseTotal, discountAmount]);
+
   const filtered = useMemo(() => {
     return billboards.filter((b) => {
       const text = (b.name || b.Billboard_Name || '').toLowerCase();
@@ -132,7 +141,8 @@ export default function ContractCreate() {
         customer_name: customerName,
         start_date: startDate,
         end_date: endDate,
-        rent_cost: rentCost && rentCost > 0 ? rentCost : estimatedTotal,
+        rent_cost: finalTotal,
+        discount: discountAmount,
         ad_type: adType,
         billboard_ids: selected,
       } as any;
@@ -272,7 +282,7 @@ export default function ContractCreate() {
         <div className="w-full lg:w-[360px] space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> بيانات الزبو��</CardTitle>
+              <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> بيانات الزبون</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -378,9 +388,28 @@ export default function ContractCreate() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> التكلفة</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
               <div className="text-sm text-muted-foreground">تقدير تلقائي حسب الفئة والمدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل</div>
-              <Input type="number" value={rentCost} onChange={(e) => setRentCost(Number(e.target.value))} placeholder="تكلفة العقد (اختياري)" />
+              <Input type="number" value={rentCost} onChange={(e) => setRentCost(Number(e.target.value))} placeholder="تكلفة قبل الخصم (اختياري)" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-sm">نوع الخصم</label>
+                  <Select value={discountType} onValueChange={(v) => setDiscountType(v as any)}>
+                    <SelectTrigger><SelectValue placeholder="نوع الخصم" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percent">نسبة %</SelectItem>
+                      <SelectItem value="amount">قيمة</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm">قيمة الخصم</label>
+                  <Input type="number" value={discountValue} onChange={(e) => setDiscountValue(Number(e.target.value) || 0)} placeholder="0" />
+                </div>
+              </div>
+              <div className="text-sm">الإجمالي قبل الخصم: {baseTotal.toLocaleString('ar-LY')} د.ل</div>
+              <div className="text-sm">الخصم: {discountAmount.toLocaleString('ar-LY')} د.ل</div>
+              <div className="text-base font-semibold">الإجمالي بعد الخصم: {finalTotal.toLocaleString('ar-LY')} د.ل</div>
               <Button className="w-full" onClick={submit}>إنشاء العقد</Button>
               <Button variant="outline" className="w-full" onClick={() => navigate('/admin/contracts')}>إلغاء</Button>
             </CardContent>
