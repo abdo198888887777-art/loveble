@@ -44,6 +44,15 @@ function makeSafe(fn: any) {
     if (args.length === 0) return fn();
     const first = args[0];
     const rest = args.slice(1);
+
+    // If caller passed an object with title/description, format those fields instead of stringifying whole object
+    if (first && typeof first === 'object' && (first.title || first.description)) {
+      const safe = { ...first } as any;
+      if (safe.title && typeof safe.title !== 'string' && !React.isValidElement(safe.title)) safe.title = formatArg(safe.title);
+      if (safe.description && typeof safe.description !== 'string' && !React.isValidElement(safe.description)) safe.description = formatArg(safe.description);
+      return fn(safe, ...rest);
+    }
+
     return fn(formatArg(first), ...rest);
   };
 }
