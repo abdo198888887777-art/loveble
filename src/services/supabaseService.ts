@@ -131,8 +131,7 @@ export async function createContract(contractData: any) {
       'End Date': contractData.end_date,
       'Total Rent': contractData.rent_cost || 0,
       'Ad Type': contractData.ad_type || '',
-      'Contract Number': Date.now().toString()
-    })
+          })
     .select()
     .single();
 

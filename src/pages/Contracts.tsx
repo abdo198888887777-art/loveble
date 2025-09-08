@@ -10,13 +10,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/sonner';
 import { Plus, Eye, Edit, Trash2, Calendar, User, DollarSign } from 'lucide-react';
-import { 
-  createContract, 
-  getContracts, 
+import { useLocation } from 'react-router-dom';
+import {
+  createContract,
+  getContracts,
   getContractWithBillboards,
   getAvailableBillboards,
   updateContract,
   deleteContract,
+  addBillboardsToContract,
+  removeBillboardFromContract,
   Contract,
   ContractCreate
 } from '@/services/contractService';
@@ -28,6 +31,7 @@ export default function Contracts() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const location = useLocation();
   const [selectedContract, setSelectedContract] = useState<any>(null);
   
   const [formData, setFormData] = useState<ContractCreate>({
@@ -40,6 +44,7 @@ export default function Contracts() {
   });
 
   const [bbSearch, setBbSearch] = useState('');
+  const [editBbSearch, setEditBbSearch] = useState('');
 
   const loadData = async () => {
     try {
@@ -58,6 +63,15 @@ export default function Contracts() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cn = params.get('contract');
+    if (cn && !viewOpen) {
+      handleViewContract(String(cn));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   const handleCreateContract = async () => {
     try {
@@ -120,7 +134,7 @@ export default function Contracts() {
     } else {
       const daysRemaining = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       if (daysRemaining <= 7) {
-        return <Badge className="bg-yellow-500 text-white">ينتهي قريباً ({daysRemaining} أيام)</Badge>;
+        return <Badge className="bg-yellow-500 text-white">ينتهي قريب��ً ({daysRemaining} أيام)</Badge>;
       }
       return <Badge className="bg-green-500 text-white">نشط</Badge>;
     }
@@ -154,7 +168,7 @@ export default function Contracts() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">إدارة العقود</h1>
-          <p className="text-muted-foreground">إنشاء وإدارة عقود الإيجار مع اللوحات الإعلانية</p>
+          <p className="text-muted-foreground">إنشاء وإدارة عقود الإيجار مع اللوحات الإ��لانية</p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
@@ -324,10 +338,10 @@ export default function Contracts() {
                 {contracts.map((contract) => (
                   <TableRow key={contract.id}>
                     <TableCell className="font-medium">{contract.customer_name}</TableCell>
-                    <p>{contract['Ad Type'] || 'غير محدد'}</p>
-                    <TableCell>{new Date(contract.start_date).toLocaleDateString('ar')}</TableCell>
-                    <TableCell>{new Date(contract.end_date).toLocaleDateString('ar')}</TableCell>
-                    <TableCell>{contract.rent_cost?.toLocaleString()} د.ل</TableCell>
+                    <TableCell>{contract.ad_type || (contract as any)['Ad Type'] || 'غير محدد'}</TableCell>
+                    <TableCell>{contract.start_date ? new Date(contract.start_date).toLocaleDateString('ar') : '—'}</TableCell>
+                    <TableCell>{contract.end_date ? new Date(contract.end_date).toLocaleDateString('ar') : '—'}</TableCell>
+                    <TableCell>{(contract.rent_cost || 0).toLocaleString()} د.ل</TableCell>
                     <TableCell>{getContractStatus(contract)}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
@@ -416,11 +430,33 @@ export default function Contracts() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {selectedContract.billboards.map((billboard: any) => (
                         <Card key={billboard.ID || billboard.id} className="border">
-                          <CardContent className="p-4">
-                            <h4 className="font-semibold">{billboard.Billboard_Name || billboard.name}</h4>
-                            <p className="text-sm text-muted-foreground">{billboard.Nearest_Landmark || billboard.location}</p>
-                            <p className="text-sm">الحجم: {billboard.Size || billboard.size}</p>
-                            <p className="text-sm">المدينة: {billboard.City || billboard.city}</p>
+                          <CardContent className="p-4 flex items-center justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">{billboard.Billboard_Name || billboard.name}</h4>
+                              <p className="text-sm text-muted-foreground">{billboard.Nearest_Landmark || billboard.location}</p>
+                              <p className="text-sm">الحجم: {billboard.Size || billboard.size}</p>
+                              <p className="text-sm">المدينة: {billboard.City || billboard.city}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={async () => {
+                                try {
+                                  const contractNumber = String(selectedContract.Contract_Number ?? selectedContract['Contract Number'] ?? selectedContract.id);
+                                  await removeBillboardFromContract(contractNumber, billboard.ID || billboard.id);
+                                  toast.success('تم إزالة اللوحة من العقد');
+                                  const refreshed = await getContractWithBillboards(contractNumber);
+                                  setSelectedContract(refreshed);
+                                  const av = await getAvailableBillboards();
+                                  setAvailableBillboards(av || []);
+                                } catch (e) {
+                                  console.error(e);
+                                  toast.error('فشل إزالة اللوحة');
+                                }
+                              }}
+                            >
+                              إزالة
+                            </Button>
                           </CardContent>
                         </Card>
                       ))}
@@ -430,6 +466,70 @@ export default function Contracts() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* التعديل: إضافة لوحات أثناء سريان العقد */}
+              {(() => {
+                const today = new Date();
+                const start = selectedContract.start_date ? new Date(selectedContract.start_date) : (selectedContract['Contract Date'] ? new Date(selectedContract['Contract Date']) : null);
+                const end = selectedContract.end_date ? new Date(selectedContract.end_date) : (selectedContract['End Date'] ? new Date(selectedContract['End Date']) : null);
+                const active = start && end && today >= start && today <= end;
+                if (!active) return null;
+                const filtered = (availableBillboards || []).filter((b) => {
+                  const q = editBbSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return [b.Billboard_Name, b.Nearest_Landmark, b.City, b.Size]
+                    .some((v: any) => String(v || '').toLowerCase().includes(q));
+                });
+                return (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">إضافة لوحات إلى العقد (نشط)</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="mb-3">
+                        <Input placeholder="بحث عن لوحة..." value={editBbSearch} onChange={(e) => setEditBbSearch(e.target.value)} />
+                      </div>
+                      <div className="max-h-96 overflow-auto space-y-2">
+                        {filtered.map((b: any) => (
+                          <div key={b.ID} className="flex items-center justify-between rounded-lg border p-3">
+                            <div>
+                              <div className="font-medium">{b.Billboard_Name}</div>
+                              <div className="text-xs text-muted-foreground">{b.Nearest_Landmark} • {b.Size}</div>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  const contractNumber = String(selectedContract.Contract_Number ?? selectedContract['Contract Number'] ?? selectedContract.id);
+                                  await addBillboardsToContract(contractNumber, [b.ID], {
+                                    start_date: selectedContract.start_date || selectedContract['Contract Date'],
+                                    end_date: selectedContract.end_date || selectedContract['End Date'],
+                                    customer_name: selectedContract.customer_name || selectedContract['Customer Name'] || '',
+                                  });
+                                  toast.success('تم إضافة اللوحة إلى العقد');
+                                  const refreshed = await getContractWithBillboards(contractNumber);
+                                  setSelectedContract(refreshed);
+                                  const av = await getAvailableBillboards();
+                                  setAvailableBillboards(av || []);
+                                } catch (e) {
+                                  console.error(e);
+                                  toast.error('فشل إضافة اللوحة');
+                                }
+                              }}
+                            >
+                              إضافة
+                            </Button>
+                          </div>
+                        ))}
+                        {filtered.length === 0 && (
+                          <p className="text-sm text-muted-foreground">لا توجد لوحات متاحة مطابقة</p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
             </div>
           )}
         </DialogContent>

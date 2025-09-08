@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FileText, Search, Eye, Edit, Trash2, Download, Calendar, User, Building } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -14,6 +15,7 @@ export const ContractsTable = () => {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadContracts();
@@ -136,7 +138,7 @@ export const ContractsTable = () => {
             <Download className="h-4 w-4" />
             تصدير
           </Button>
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => navigate('/admin/contracts/new')}>
             <FileText className="h-4 w-4" />
             عقد جديد
           </Button>
@@ -265,8 +267,28 @@ export const ContractsTable = () => {
                   <TableCell>{getStatusBadge(contract)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0"><Eye className="h-4 w-4" /></Button>
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0"><Edit className="h-4 w-4" /></Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          const cn = String(contract.Contract_Number ?? contract['Contract Number'] ?? '');
+                          if (cn) navigate(`/admin/contracts/edit?contract=${encodeURIComponent(cn)}`);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          const cn = String(contract.Contract_Number ?? contract['Contract Number'] ?? '');
+                          if (cn) navigate(`/admin/contracts/edit?contract=${encodeURIComponent(cn)}`);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </TableCell>
