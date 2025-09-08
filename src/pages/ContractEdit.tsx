@@ -9,6 +9,10 @@ import { loadBillboards } from '@/services/billboardService';
 import type { Billboard } from '@/types';
 import { addBillboardsToContract, getContractWithBillboards, removeBillboardFromContract, updateContract } from '@/services/contractService';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { supabase } from '@/integrations/supabase/client';
+import { getPriceFor, CustomerType } from '@/data/pricing';
 
 export default function ContractEdit() {
   const navigate = useNavigate();
@@ -21,6 +25,11 @@ export default function ContractEdit() {
   // selection
   const [selected, setSelected] = useState<string[]>([]);
 
+  // customers combobox
+  const [customers, setCustomers] = useState<string[]>([]);
+  const [customerOpen, setCustomerOpen] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState('');
+
   // filters
   const [q, setQ] = useState('');
   const [city, setCity] = useState<string>('all');
@@ -32,6 +41,7 @@ export default function ContractEdit() {
   const [adType, setAdType] = useState('');
   const [pricingCategory, setPricingCategory] = useState<string>('عادي');
   const [startDate, setStartDate] = useState('');
+  const [durationMonths, setDurationMonths] = useState<number>(3);
   const [endDate, setEndDate] = useState('');
   const [rentCost, setRentCost] = useState<number>(0);
 
@@ -57,13 +67,40 @@ export default function ContractEdit() {
 
   useEffect(() => {
     (async () => {
+      try {
+        const { data, error } = await supabase.from('Contract').select('"Customer Name"');
+        if (!error && Array.isArray(data)) {
+          const list = Array.from(new Set(((data as any[]) ?? []).map((r: any) => r['Customer Name']).filter(Boolean)));
+          list.sort((a, b) => String(a).localeCompare(String(b), 'ar'));
+          setCustomers(list as string[]);
+        }
+      } catch (e) {
+        console.warn('load customers failed');
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
       if (!contractNumber) return;
       try {
         const c = await getContractWithBillboards(contractNumber);
         setCustomerName(c.customer_name || c['Customer Name'] || '');
         setAdType(c.ad_type || c['Ad Type'] || '');
-        setStartDate(c.start_date || c['Contract Date'] || '');
-        setEndDate(c.end_date || c['End Date'] || '');
+        const s = c.start_date || c['Contract Date'] || '';
+        const e = c.end_date || c['End Date'] || '';
+        setStartDate(s);
+        setEndDate(e);
+        // infer duration in months
+        if (s && e) {
+          const sd = new Date(s);
+          const ed = new Date(e);
+          if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
+            let months = (ed.getFullYear() - sd.getFullYear()) * 12 + (ed.getMonth() - sd.getMonth());
+            if (months <= 0) months = 3;
+            setDurationMonths(months);
+          }
+        }
         setRentCost(typeof c.rent_cost === 'number' ? c.rent_cost : Number(c['Total Rent'] || 0));
         setSelected((c.billboards || []).map((b: any) => String(b.ID)));
       } catch (e) {
@@ -75,6 +112,31 @@ export default function ContractEdit() {
 
   const cities = useMemo(() => Array.from(new Set(billboards.map(b => b.city || b.City))).filter(Boolean) as string[], [billboards]);
   const sizes = useMemo(() => Array.from(new Set(billboards.map(b => b.size || b.Size))).filter(Boolean) as string[], [billboards]);
+
+  // compute end date automatically based on start and selected duration
+  useEffect(() => {
+    if (!startDate || !durationMonths) return;
+    const d = new Date(startDate);
+    const end = new Date(d);
+    end.setMonth(end.getMonth() + durationMonths);
+    const iso = end.toISOString().split('T')[0];
+    setEndDate(iso);
+  }, [startDate, durationMonths]);
+
+  // estimated total based on pricing
+  const estimatedTotal = useMemo(() => {
+    const months = Number(durationMonths || 0);
+    if (!months) return 0;
+    const sel = billboards.filter(b => selected.includes(String(b.ID)));
+    return sel.reduce((acc, b) => {
+      const size = (b.size || (b as any).Size || '') as string;
+      const level = (b.level || (b as any).Level) as any;
+      const price = getPriceFor(size, level, pricingCategory as CustomerType, months);
+      if (price !== null) return acc + price;
+      const monthly = Number((b as any).price) || 0;
+      return acc + monthly * months;
+    }, 0);
+  }, [billboards, selected, durationMonths, pricingCategory]);
 
   const filtered = useMemo(() => {
     return billboards.filter((b) => {
@@ -158,25 +220,34 @@ export default function ContractEdit() {
                 <p className="text-muted-foreground">لا توجد لوحات</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {billboards.filter(b => selected.includes(String(b.ID))).map((b) => (
-                    <Card key={b.ID} className="overflow-hidden">
-                      <CardContent className="p-0">
-                        {b.image && (
-                          <img src={b.image} alt={b.name || b.Billboard_Name} className="w-full h-36 object-cover" />
-                        )}
-                        <div className="p-3 flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-semibold">{b.name || b.Billboard_Name}</div>
-                            <div className="text-xs text-muted-foreground">{b.location || b.Nearest_Landmark}</div>
-                            <div className="text-xs">الحجم: {b.size || b.Size} • {b.city || b.City}</div>
+                  {billboards.filter(b => selected.includes(String(b.ID))).map((b) => {
+                    const months = Number(durationMonths || 0);
+                    const size = (b.size || (b as any).Size || '') as string;
+                    const level = (b.level || (b as any).Level) as any;
+                    const price = months ? getPriceFor(size, level, pricingCategory as CustomerType, months) : null;
+                    const fallback = (Number((b as any).price) || 0) * (months || 1);
+                    const totalForBoard = price !== null ? price : fallback;
+                    return (
+                      <Card key={b.ID} className="overflow-hidden">
+                        <CardContent className="p-0">
+                          {b.image && (
+                            <img src={b.image} alt={b.name || b.Billboard_Name} className="w-full h-36 object-cover" />
+                          )}
+                          <div className="p-3 flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold">{b.name || b.Billboard_Name}</div>
+                              <div className="text-xs text-muted-foreground">{b.location || b.Nearest_Landmark}</div>
+                              <div className="text-xs">الحجم: {b.size || b.Size} • {b.city || b.City}</div>
+                              <div className="text-xs font-medium mt-1">السعر: {totalForBoard.toLocaleString('ar-LY')} د.ل {months ? `/${months} شهر` : ''}</div>
+                            </div>
+                            <Button size="sm" variant="destructive" onClick={() => removeSelected(String(b.ID))}>
+                              <X className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <Button size="sm" variant="destructive" onClick={() => removeSelected(String(b.ID))}>
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -266,7 +337,58 @@ export default function ContractEdit() {
             <CardContent className="space-y-3">
               <div>
                 <label className="text-sm">اسم الزبون</label>
-                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between">
+                      {customerName ? customerName : 'اختر أو اكتب اسم الزبون'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="p-0">
+                    <Command>
+                      <CommandInput placeholder="ابحث أو اكتب اسم جديد" value={customerQuery} onValueChange={setCustomerQuery} />
+                      <CommandList>
+                        <CommandEmpty>
+                          <Button variant="ghost" className="w-full justify-start" onClick={() => {
+                            if (customerQuery.trim()) {
+                              const name = customerQuery.trim();
+                              setCustomerName(name);
+                              setCustomers((prev) => prev.includes(name) ? prev : [name, ...prev]);
+                              setCustomerOpen(false);
+                              setCustomerQuery('');
+                            }
+                          }}>
+                            إضافة "{customerQuery}" كعميل جديد
+                          </Button>
+                        </CommandEmpty>
+                        <CommandGroup>
+                          {customers.map((c) => (
+                            <CommandItem key={c} value={c} onSelect={() => {
+                              setCustomerName(c);
+                              setCustomerOpen(false);
+                              setCustomerQuery('');
+                            }}>
+                              {c}
+                            </CommandItem>
+                          ))}
+                          {customerQuery && !customers.includes(customerQuery.trim()) && (
+                            <CommandItem
+                              value={`__add_${customerQuery}`}
+                              onSelect={() => {
+                                const name = customerQuery.trim();
+                                setCustomerName(name);
+                                setCustomers((prev) => prev.includes(name) ? prev : [name, ...prev]);
+                                setCustomerOpen(false);
+                                setCustomerQuery('');
+                              }}
+                            >
+                              إضافة "{customerQuery}" كعميل جديد
+                            </CommandItem>
+                          )}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <label className="text-sm">نوع الإعلان</label>
@@ -297,8 +419,17 @@ export default function ContractEdit() {
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div>
+                <label className="text-sm">المدة (بالأشهر)</label>
+                <Select value={String(durationMonths)} onValueChange={(v) => setDurationMonths(Number(v))}>
+                  <SelectTrigger><SelectValue placeholder="اختر المدة" /></SelectTrigger>
+                  <SelectContent>
+                    {[1,2,3,6,12].map(m => (<SelectItem key={m} value={String(m)}>{m}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <label className="text-sm">تاريخ النهاية</label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <Input type="date" value={endDate} readOnly disabled />
               </div>
             </CardContent>
           </Card>
@@ -308,6 +439,7 @@ export default function ContractEdit() {
               <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> التكلفة</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              <div className="text-sm text-muted-foreground">تقدير تلقائي حسب الفئة والمدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل</div>
               <Input type="number" value={rentCost} onChange={(e) => setRentCost(Number(e.target.value))} placeholder="تكلفة العقد" />
               <Button className="w-full" onClick={save}>حفظ التعديلات</Button>
               <Button variant="outline" className="w-full" onClick={() => navigate('/admin/contracts')}>إلغاء</Button>
