@@ -6,6 +6,7 @@ interface ContractData {
   start_date: string;
   end_date: string;
   rent_cost: number;
+  discount?: number;
   billboard_ids?: string[];
   ad_type?: string;
 }
@@ -15,6 +16,7 @@ interface ContractCreate {
   start_date: string;
   end_date: string;
   rent_cost: number;
+  discount?: number;
   ad_type?: string;
   billboard_ids?: string[];
 }
@@ -33,6 +35,7 @@ export async function createContract(contractData: ContractData) {
       'Contract Date': contractPayload.start_date,
       'End Date': contractPayload.end_date,
       'Total Rent': contractPayload.rent_cost,
+      'Discount': contractPayload.discount ?? null,
       'Contract Number': Date.now().toString(), // رقم عقد تلقائي
     })
     .select()
