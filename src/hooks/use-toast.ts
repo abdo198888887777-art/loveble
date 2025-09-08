@@ -134,8 +134,31 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+function formatArg(arg: any) {
+  if (arg === undefined || arg === null) return arg;
+  if (typeof arg === 'string') return arg;
+  if (arg && typeof arg === 'object') {
+    if (typeof arg.message === 'string') return arg.message;
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      return String(arg);
+    }
+  }
+  return String(arg);
+}
+
 function toast({ ...props }: Toast) {
   const id = genId();
+
+  // ensure title/description are safe strings or React nodes
+  const safeProps = { ...props } as any;
+  if (safeProps.title && typeof safeProps.title !== 'string' && !React.isValidElement(safeProps.title)) {
+    safeProps.title = formatArg(safeProps.title);
+  }
+  if (safeProps.description && typeof safeProps.description !== 'string' && !React.isValidElement(safeProps.description)) {
+    safeProps.description = formatArg(safeProps.description);
+  }
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -147,7 +170,7 @@ function toast({ ...props }: Toast) {
   dispatch({
     type: "ADD_TOAST",
     toast: {
-      ...props,
+      ...safeProps,
       id,
       open: true,
       onOpenChange: (open) => {
