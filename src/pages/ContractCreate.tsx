@@ -41,6 +41,7 @@ export default function ContractCreate() {
   const [durationMonths, setDurationMonths] = useState<number>(3);
   const [endDate, setEndDate] = useState('');
   const [rentCost, setRentCost] = useState<number>(0);
+  const [userEditedRentCost, setUserEditedRentCost] = useState(false);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState<number>(0);
 
@@ -103,6 +104,11 @@ export default function ContractCreate() {
   }, [billboards, selected, durationMonths, pricingCategory]);
 
   const baseTotal = useMemo(() => (rentCost && rentCost > 0 ? rentCost : estimatedTotal), [rentCost, estimatedTotal]);
+
+  useEffect(() => {
+    if (!userEditedRentCost) setRentCost(estimatedTotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimatedTotal]);
   const discountAmount = useMemo(() => {
     if (!discountValue) return 0;
     return discountType === 'percent' ? (baseTotal * Math.max(0, Math.min(100, discountValue)) / 100) : Math.max(0, discountValue);
@@ -350,7 +356,7 @@ export default function ContractCreate() {
                   <SelectTrigger><SelectValue placeholder="الفئة" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="عادي">عادي</SelectItem>
-                    <SelectItem value="شركات">شركات</SelectItem>
+                    <SelectItem value="شرك��ت">شركات</SelectItem>
                     <SelectItem value="مسوق">مسوق</SelectItem>
                     <SelectItem value="المدينة">المدينة</SelectItem>
                   </SelectContent>
@@ -390,7 +396,7 @@ export default function ContractCreate() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-sm text-muted-foreground">تقدير تلقائي حسب الفئة والمدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل</div>
-              <Input type="number" value={rentCost} onChange={(e) => setRentCost(Number(e.target.value))} placeholder="تكلفة قبل الخصم (اختياري)" />
+              <Input type="number" value={rentCost} onChange={(e) => { setRentCost(Number(e.target.value)); setUserEditedRentCost(true); }} placeholder="تكلفة قبل الخصم (تُحدّث تلقائياً)" />
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-sm">نوع الخصم</label>
