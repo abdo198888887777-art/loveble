@@ -44,6 +44,8 @@ export default function ContractEdit() {
   const [durationMonths, setDurationMonths] = useState<number>(3);
   const [endDate, setEndDate] = useState('');
   const [rentCost, setRentCost] = useState<number>(0);
+  const [userEditedRentCost, setUserEditedRentCost] = useState(false);
+  const [originalTotal, setOriginalTotal] = useState<number>(0);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState<number>(0);
 
@@ -103,7 +105,9 @@ export default function ContractEdit() {
             setDurationMonths(months);
           }
         }
-        setRentCost(typeof c.rent_cost === 'number' ? c.rent_cost : Number(c['Total Rent'] || 0));
+        const savedTotal = typeof c.rent_cost === 'number' ? c.rent_cost : Number(c['Total Rent'] || 0);
+        setRentCost(savedTotal);
+        setOriginalTotal(savedTotal || 0);
         const disc = Number((c as any).Discount ?? 0);
         if (!isNaN(disc) && disc > 0) {
           setDiscountType('amount');
@@ -146,6 +150,14 @@ export default function ContractEdit() {
   }, [billboards, selected, durationMonths, pricingCategory]);
 
   const baseTotal = useMemo(() => (rentCost && rentCost > 0 ? rentCost : estimatedTotal), [rentCost, estimatedTotal]);
+
+  // auto update rent cost with new estimation unless user manually edited it
+  useEffect(() => {
+    if (!userEditedRentCost) {
+      setRentCost(estimatedTotal);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimatedTotal]);
   const discountAmount = useMemo(() => {
     if (!discountValue) return 0;
     return discountType === 'percent' ? (baseTotal * Math.max(0, Math.min(100, discountValue)) / 100) : Math.max(0, discountValue);
@@ -232,7 +244,7 @@ export default function ContractEdit() {
             </CardHeader>
             <CardContent>
               {selected.length === 0 ? (
-                <p className="text-muted-foreground">لا توجد لو��ات</p>
+                <p className="text-muted-foreground">لا توجد لوحات</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {billboards.filter(b => selected.includes(String(b.ID))).map((b) => {
@@ -455,7 +467,7 @@ export default function ContractEdit() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-sm text-muted-foreground">تقدير تلقائي حسب الفئة والمدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل</div>
-              <Input type="number" value={rentCost} onChange={(e) => setRentCost(Number(e.target.value))} placeholder="تكلفة قبل الخصم (اختياري)" />
+              <Input type="number" value={rentCost} onChange={(e) => { setRentCost(Number(e.target.value)); setUserEditedRentCost(true); }} placeholder="تكلفة قبل الخصم (تُحدّث تلقائياً)" />
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-sm">نوع الخصم</label>
@@ -475,6 +487,7 @@ export default function ContractEdit() {
               <div className="text-sm">الإجمالي قبل الخصم: {baseTotal.toLocaleString('ar-LY')} د.ل</div>
               <div className="text-sm">الخصم: {discountAmount.toLocaleString('ar-LY')} د.ل</div>
               <div className="text-base font-semibold">الإجمالي بعد الخصم: {finalTotal.toLocaleString('ar-LY')} د.ل</div>
+              <div className="text-sm text-muted-foreground">السابق: {originalTotal.toLocaleString('ar-LY')} د.ل • الفرق: {(finalTotal - originalTotal).toLocaleString('ar-LY')} د.ل</div>
               <Button className="w-full" onClick={save}>حفظ التعديلات</Button>
               <Button variant="outline" className="w-full" onClick={() => navigate('/admin/contracts')}>إلغاء</Button>
             </CardContent>
