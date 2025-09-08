@@ -35,8 +35,7 @@ export async function createContract(contractData: ContractData) {
       'Contract Date': contractPayload.start_date,
       'End Date': contractPayload.end_date,
       'Total Rent': contractPayload.rent_cost,
-      'Discount': contractPayload.discount ?? null,
-      'Contract Number': Date.now().toString(), // رقم عقد تلقائي
+      'Discount': contractPayload.discount ?? null
     })
     .select()
     .single();
@@ -46,10 +45,11 @@ export async function createContract(contractData: ContractData) {
   // تحديث اللوحات المرتبطة بالعقد
   if (billboard_ids && billboard_ids.length > 0) {
     for (const billboard_id of billboard_ids) {
+      const newContractNumber = (contract as any)?.Contract_Number ?? (contract as any)?.['Contract Number'];
       const { error: billboardError } = await supabase
         .from('billboards')
         .update({
-          Contract_Number: contract['Contract Number'],
+          Contract_Number: newContractNumber,
           Rent_Start_Date: contractData.start_date,
           Rent_End_Date: contractData.end_date,
           Customer_Name: contractData.customer_name,
