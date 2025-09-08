@@ -60,9 +60,9 @@ export default function ContractEdit() {
       try {
         const data = await loadBillboards();
         setBillboards(data);
-      } catch (e) {
+      } catch (e: any) {
         console.error(e);
-        toast.error('فشل تحميل اللوحات');
+        toast.error(e?.message || 'فشل تحميل اللوحات');
       } finally {
         setLoading(false);
       }
@@ -114,9 +114,9 @@ export default function ContractEdit() {
           setDiscountValue(disc);
         }
         setSelected((c.billboards || []).map((b: any) => String(b.ID)));
-      } catch (e) {
+      } catch (e: any) {
         console.error(e);
-        toast.error('تعذر تحميل العقد');
+        toast.error(e?.message || 'تعذر تحميل العقد');
       }
     })();
   }, [contractNumber]);
@@ -219,9 +219,9 @@ export default function ContractEdit() {
 
       toast.success('تم حفظ التعديلات');
       navigate('/admin/contracts');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      toast.error('فشل حفظ التعديلات');
+      toast.error(e?.message || 'فشل حفظ التعديلات');
     }
   };
 
@@ -320,7 +320,7 @@ export default function ContractEdit() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-10 text-center">جاري التحميل...</div>
+                <div className="py-10 text-center">جاري ��لتحميل...</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filtered.map((b) => {
