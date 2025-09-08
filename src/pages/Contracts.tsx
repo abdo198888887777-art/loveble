@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/sonner';
 import { Plus, Eye, Edit, Trash2, Calendar, User, DollarSign } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import {
   createContract,
   getContracts,
@@ -30,6 +31,7 @@ export default function Contracts() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const location = useLocation();
   const [selectedContract, setSelectedContract] = useState<any>(null);
   
   const [formData, setFormData] = useState<ContractCreate>({
@@ -61,6 +63,15 @@ export default function Contracts() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cn = params.get('contract');
+    if (cn && !viewOpen) {
+      handleViewContract(String(cn));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   const handleCreateContract = async () => {
     try {
