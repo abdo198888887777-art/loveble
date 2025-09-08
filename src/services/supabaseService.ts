@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Billboard, Contract, Pricing } from '@/types';
 import { loadBillboards as loadBillboardsNormalized } from '@/services/billboardService';
+import { supabase } from '@/integrations/supabase/client';
 
 // جلب جميع اللوحات
 export const fetchAllBillboards = async (): Promise<Billboard[]> => {
