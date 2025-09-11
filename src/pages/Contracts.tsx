@@ -317,160 +317,13 @@ export default function Contracts() {
           <h1 className="text-3xl font-bold text-foreground">إدارة العقود</h1>
           <p className="text-muted-foreground">إنشاء وإدارة عقود الإيجار مع اللوحات الإعلانية</p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-smooth">
-              <Plus className="h-4 w-4 ml-2" />
-              إنشاء عقد جديد
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-6xl">
-            <DialogHeader>
-              <DialogTitle>إنشاء عقد جديد</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* العمود الأيسر: بيانات الحجز */}
-                <div className="space-y-4">
-                  <Card className="border">
-                    <CardHeader>
-                      <CardTitle className="text-base">بيانات الحجز</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div>
-                        <Label>اسم الزبون *</Label>
-                        <Input
-                          value={formData.customer_name}
-                          onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                          placeholder="اسم الزبون"
-                        />
-                      </div>
-                      <div>
-                        <Label>نوع الإعلان</Label>
-                        <Input
-                          value={formData.ad_type}
-                          onChange={(e) => setFormData({ ...formData, ad_type: e.target.value })}
-                          placeholder="نوع الإعلان"
-                        />
-                      </div>
-                      <div>
-                        <Label>الفئة السعرية</Label>
-                        <Select value={pricingCategory} onValueChange={(v)=>setPricingCategory(v as CustomerType)}>
-                          <SelectTrigger><SelectValue placeholder="الفئة" /></SelectTrigger>
-                          <SelectContent>
-                            {CUSTOMERS.map(c => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>تاريخ البداية *</Label>
-                        <Input
-                          type="date"
-                          value={formData.start_date}
-                          onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <Label>المدة (بالأشهر)</Label>
-                          <Select value={String(durationMonths)} onValueChange={(v)=>setDurationMonths(Number(v))}>
-                            <SelectTrigger><SelectValue placeholder="اختر المدة" /></SelectTrigger>
-                            <SelectContent>
-                              {[1,2,3,6,12].map(m => (<SelectItem key={m} value={String(m)}>{m}</SelectItem>))}
-                            </SelectContent>
-                          </Select>
-                      </div>
-                      <div>
-                        <Label>تاريخ النهاية *</Label>
-                        <Input type="date" value={formData.end_date} readOnly disabled />
-                      </div>
-                      <div>
-                        <Label>التكلفة التقديرية</Label>
-                        <Input type="number" value={formData.rent_cost} onChange={(e)=>setFormData({...formData, rent_cost: Number(e.target.value)})} />
-                        <div className="text-xs text-muted-foreground mt-1">يتم تحديثها تلقائياً حسب الفئة والمدة وعدد اللوحات</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* العمود الأيمن: اللوحات */}
-                <div className="md:col-span-2 space-y-4">
-                  <Card className="border">
-                    <CardHeader>
-                      <CardTitle className="text-base">اللوحات ا��مختارة ({formData.billboard_ids.length})</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="max-h-96 overflow-auto space-y-2">
-                        {selectedBillboardsDetails.map((b) => (
-                          <div key={b.id} className="flex items-center justify-between rounded-lg border p-3">
-                            <div>
-                              <div className="font-medium">{b.name}</div>
-                              <div className="text-xs text-muted-foreground">{b.location} • {b.size}</div>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => setFormData({ ...formData, billboard_ids: formData.billboard_ids.filter((id) => id !== b.id) })}
-                            >
-                              إزالة
-                            </Button>
-                          </div>
-                        ))}
-                        {formData.billboard_ids.length === 0 && (
-                          <p className="text-sm text-muted-foreground">لم يتم اختيار أي لوحة</p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border">
-                    <CardHeader>
-                      <CardTitle className="text-base">كل اللوحات المتاحة ({filteredAvailable.length})</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="mb-3">
-                        <Input placeholder="بحث..." value={bbSearch} onChange={(e) => setBbSearch(e.target.value)} />
-                      </div>
-                      <div className="max-h-96 overflow-auto space-y-2">
-                        {filteredAvailable.map((b) => (
-                          <div key={b.id} className="flex items-center justify-between rounded-lg border p-3">
-                            <div>
-                              <div className="font-medium">{b.name}</div>
-                              <div className="text-xs text-muted-foreground">{b.location} • {b.size}</div>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={formData.billboard_ids.includes(b.id || '')}
-                              onClick={() => setFormData({
-                                ...formData,
-                                billboard_ids: formData.billboard_ids.includes(b.id || '')
-                                  ? formData.billboard_ids
-                                  : [...formData.billboard_ids, b.id || '']
-                              })}
-                            >
-                              إضافة
-                            </Button>
-                          </div>
-                        ))}
-                        {filteredAvailable.length === 0 && (
-                          <p className="text-sm text-muted-foreground">لا توجد نتائج</p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-6">
-              <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                إلغاء
-              </Button>
-              <Button onClick={handleCreateContract}>
-                إنشاء العقد
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button
+          className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-smooth"
+          onClick={() => navigate('/admin/contracts/new')}
+        >
+          <Plus className="h-4 w-4 ml-2" />
+          إنشاء عقد جديد
+        </Button>
       </div>
 
       {/* إحصائيات سريعة */}
@@ -545,7 +398,7 @@ export default function Contracts() {
             <div className="relative">
               <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="ابحث في العقود..."
+                placeholder="اب��ث في العقود..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pr-10"
