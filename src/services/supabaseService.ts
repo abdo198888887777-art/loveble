@@ -288,7 +288,7 @@ export const fetchDashboardStats = async () => {
     });
 
     const totalRevenue = contracts.reduce((sum, contract) => {
-      const total = parseFloat(contract['Total Rent']?.toString() || '0');
+      const total = parseFloat((contract as any)['Total Rent']?.toString() || '0');
       return sum + (isNaN(total) ? 0 : total);
     }, 0);
 
