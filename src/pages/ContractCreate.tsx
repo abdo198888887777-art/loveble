@@ -191,23 +191,39 @@ export default function ContractCreate() {
     return d.toISOString().split('T')[0];
   };
 
-  // Filter logic matching ContractEdit exactly
+  // إظهار اللوحات المتاحة أو القريبة من الانتهاء فقط + حد أعلى 10 عناصر
   const filtered = useMemo(() => {
-    return billboards.filter((b) => {
-      const text = (b as any).name || (b as any).Billboard_Name || '';
-      const loc = (b as any).location || (b as any).Nearest_Landmark || '';
-      const c = ((b as any).city || (b as any).City || '').toString();
-      const s = ((b as any).size || (b as any).Size || '').toString();
-      const st = ((b as any).status || (b as any).Status || '').toString();
+    const today = new Date();
+    const NEAR_DAYS = 30; // قريب الانتهاء خلال 30 يوماً
+
+    const isNearExpiring = (b: any) => {
+      const raw = b.Rent_End_Date || b.rent_end_date || b.rentEndDate || b['End Date'];
+      if (!raw) return false;
+      const end = new Date(raw);
+      if (isNaN(end.getTime())) return false;
+      const diff = Math.ceil((end.getTime() - today.getTime()) / 86400000);
+      return diff > 0 && diff <= NEAR_DAYS;
+    };
+
+    const list = billboards.filter((b: any) => {
+      const text = b.name || b.Billboard_Name || '';
+      const loc = b.location || b.Nearest_Landmark || '';
+      const c = String(b.city || b.City || '');
+      const s = String(b.size || b.Size || '');
+      const st = String(b.status || b.Status || '');
+
       const matchesQ = !q || text.toLowerCase().includes(q.toLowerCase()) || loc.toLowerCase().includes(q.toLowerCase());
       const matchesCity = city === 'all' || c === city;
       const matchesSize = size === 'all' || s === size;
-      const isInContract = selected.includes(String((b as any).ID));
-      const matchesStatus =
-        status === 'all' || (status === 'available' ? (st === 'available' || (!(b as any).contractNumber && !(b as any).Contract_Number) || isInContract) : true);
-      return matchesQ && matchesCity && matchesSize && matchesStatus;
+
+      const available = st === 'available' || (!b.contractNumber && !b.Contract_Number);
+      const near = isNearExpiring(b);
+
+      return matchesQ && matchesCity && matchesSize && (available || near);
     });
-  }, [billboards, q, city, size, status, selected]);
+
+    return list.slice(0, 10);
+  }, [billboards, q, city, size]);
 
   const toggleSelect = (b: Billboard) => {
     const id = String((b as any).ID);
@@ -252,7 +268,7 @@ export default function ContractCreate() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">إنشاء عقد جديد {nextContractNumber && `#${nextContractNumber}`}</h1>
-          <p className="text-muted-foreground">إنشاء عقد إيجار جديد مع تحديد اللوحات والشروط</p>
+          <p className="text-muted-foreground">إنشاء عقد إيجار جديد مع تحد��د اللوحات والشروط</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => navigate('/admin/contracts')}>
@@ -718,7 +734,7 @@ export default function ContractCreate() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-sm text-muted-foreground">
-                تقدير تلقائي حسب الفئة والمدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل
+                تقدير تلقائي حسب الفئة وا��مدة: {estimatedTotal.toLocaleString('ar-LY')} د.ل
               </div>
               <Input
                 type="number"
