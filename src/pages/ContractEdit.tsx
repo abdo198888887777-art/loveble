@@ -25,10 +25,11 @@ export default function ContractEdit() {
   // selection
   const [selected, setSelected] = useState<string[]>([]);
 
-  // customers combobox
-  const [customers, setCustomers] = useState<string[]>([]);
+  // customers combobox (id+name)
+  const [customers, setCustomers] = useState<{id:string; name:string}[]>([]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerQuery, setCustomerQuery] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   // filters
   const [q, setQ] = useState('');
@@ -72,11 +73,9 @@ export default function ContractEdit() {
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await supabase.from('Contract').select('"Customer Name"');
+        const { data, error } = await (supabase as any).from('customers').select('id,name').order('name', { ascending: true });
         if (!error && Array.isArray(data)) {
-          const list = Array.from(new Set(((data as any[]) ?? []).map((r: any) => r['Customer Name']).filter(Boolean)));
-          list.sort((a, b) => String(a).localeCompare(String(b), 'ar'));
-          setCustomers(list as string[]);
+          setCustomers((data as any) || []);
         }
       } catch (e) {
         console.warn('load customers failed');
@@ -90,6 +89,7 @@ export default function ContractEdit() {
       try {
         const c = await getContractWithBillboards(contractNumber);
         setCustomerName(c.customer_name || c['Customer Name'] || '');
+        setCustomerId(c.customer_id ?? null);
         setAdType(c.ad_type || c['Ad Type'] || '');
         const s = c.start_date || c['Contract Date'] || '';
         const e = c.end_date || c['End Date'] || '';
@@ -121,8 +121,8 @@ export default function ContractEdit() {
     })();
   }, [contractNumber]);
 
-  const cities = useMemo(() => Array.from(new Set(billboards.map(b => b.city || b.City))).filter(Boolean) as string[], [billboards]);
-  const sizes = useMemo(() => Array.from(new Set(billboards.map(b => b.size || b.Size))).filter(Boolean) as string[], [billboards]);
+  const cities = useMemo(() => Array.from(new Set(billboards.map(b => (b as any).city || (b as any).City))).filter(Boolean) as string[], [billboards]);
+  const sizes = useMemo(() => Array.from(new Set(billboards.map(b => (b as any).size || (b as any).Size))).filter(Boolean) as string[], [billboards]);
 
   // compute end date automatically based on start and selected duration
   useEffect(() => {
@@ -138,10 +138,10 @@ export default function ContractEdit() {
   const estimatedTotal = useMemo(() => {
     const months = Number(durationMonths || 0);
     if (!months) return 0;
-    const sel = billboards.filter(b => selected.includes(String(b.ID)));
+    const sel = billboards.filter(b => selected.includes(String((b as any).ID)));
     return sel.reduce((acc, b) => {
-      const size = (b.size || (b as any).Size || '') as string;
-      const level = (b.level || (b as any).Level) as any;
+      const size = ((b as any).size || (b as any).Size || '') as string;
+      const level = ((b as any).level || (b as any).Level) as any;
       const price = getPriceFor(size, level, pricingCategory as CustomerType, months);
       if (price !== null) return acc + price;
       const monthly = Number((b as any).price) || 0;
@@ -166,23 +166,23 @@ export default function ContractEdit() {
 
   const filtered = useMemo(() => {
     return billboards.filter((b) => {
-      const text = (b.name || b.Billboard_Name || '').toLowerCase();
-      const loc = (b.location || b.Nearest_Landmark || '').toLowerCase();
-      const c = (b.city || b.City || '').toString();
-      const s = (b.size || b.Size || '').toString();
-      const st = (b.status || b.Status || '').toString();
+      const text = ((b as any).name || (b as any).Billboard_Name || '').toLowerCase();
+      const loc = ((b as any).location || (b as any).Nearest_Landmark || '').toLowerCase();
+      const c = ((b as any).city || (b as any).City || '').toString();
+      const s = ((b as any).size || (b as any).Size || '').toString();
+      const st = ((b as any).status || (b as any).Status || '').toString();
       const matchesQ = !q || text.includes(q.toLowerCase()) || loc.includes(q.toLowerCase());
       const matchesCity = city === 'all' || c === city;
       const matchesSize = size === 'all' || s === size;
       // allow selecting items already in this contract; otherwise prefer available only when status filter is 'available'
-      const isInContract = selected.includes(String(b.ID));
-      const matchesStatus = status === 'all' || (status === 'available' ? (st === 'available' || (!b.contractNumber && !b.Contract_Number) || isInContract) : true);
+      const isInContract = selected.includes(String((b as any).ID));
+      const matchesStatus = status === 'all' || (status === 'available' ? (st === 'available' || (!(b as any).contractNumber && !(b as any).Contract_Number) || isInContract) : true);
       return matchesQ && matchesCity && matchesSize && matchesStatus;
     });
   }, [billboards, q, city, size, status, selected]);
 
   const toggleSelect = (b: Billboard) => {
-    const id = String(b.ID);
+    const id = String((b as any).ID);
     setSelected((prev) => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
@@ -208,14 +208,16 @@ export default function ContractEdit() {
         await removeBillboardFromContract(contractNumber, id);
       }
 
-      await updateContract(contractNumber, {
+      const updates: any = {
         'Customer Name': customerName,
         'Ad Type': adType,
         'Contract Date': startDate,
         'End Date': endDate,
         'Total Rent': finalTotal,
         'Discount': discountAmount,
-      });
+      };
+      if (customerId) updates.customer_id = customerId;
+      await updateContract(contractNumber, updates);
 
       toast.success('تم حفظ التعديلات');
       navigate('/admin/contracts');
@@ -226,48 +228,58 @@ export default function ContractEdit() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6" dir="rtl">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">تعديل عقد {contractNumber && `#${contractNumber}`}</h1>
+    <div className="container mx-auto px-4 py-6 space-y-6" dir="rtl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">تعديل عقد {contractNumber && `#${contractNumber}`}</h1>
+          <p className="text-muted-foreground">تعديل تفاصيل العقد واللوحات المرتبطة به</p>
+        </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate('/admin/contracts')}>عودة</Button>
-          <Button onClick={save}>حفظ</Button>
+          <Button variant="outline" onClick={() => navigate('/admin/contracts')}>
+            عودة
+          </Button>
+          <Button onClick={save} className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-smooth">
+            حفظ التعديلات
+          </Button>
         </div>
       </div>
       <div className="flex flex-col lg:flex-row gap-6">
         {/* main area */}
         <div className="flex-1 space-y-6">
           {/* selected on top */}
-          <Card>
+          <Card className="bg-gradient-card border-0 shadow-card">
             <CardHeader>
-              <CardTitle>اللوحات المرتبطة ({selected.length})</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-primary" />
+                اللوحات المرتبطة ({selected.length})
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {selected.length === 0 ? (
                 <p className="text-muted-foreground">لا توجد لوحات</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {billboards.filter(b => selected.includes(String(b.ID))).map((b) => {
+                  {billboards.filter(b => selected.includes(String((b as any).ID))).map((b) => {
                     const months = Number(durationMonths || 0);
-                    const size = (b.size || (b as any).Size || '') as string;
-                    const level = (b.level || (b as any).Level) as any;
+                    const size = ((b as any).size || (b as any).Size || '') as string;
+                    const level = ((b as any).level || (b as any).Level) as any;
                     const price = months ? getPriceFor(size, level, pricingCategory as CustomerType, months) : null;
                     const fallback = (Number((b as any).price) || 0) * (months || 1);
                     const totalForBoard = price !== null ? price : fallback;
                     return (
-                      <Card key={b.ID} className="overflow-hidden">
+                      <Card key={(b as any).ID} className="overflow-hidden">
                         <CardContent className="p-0">
-                          {b.image && (
-                            <img src={b.image} alt={b.name || b.Billboard_Name} className="w-full h-36 object-cover" />
+                          {(b as any).image && (
+                            <img src={(b as any).image} alt={(b as any).name || (b as any).Billboard_Name} className="w-full h-36 object-cover" />
                           )}
                           <div className="p-3 flex items-start justify-between gap-3">
                             <div>
-                              <div className="font-semibold">{b.name || b.Billboard_Name}</div>
-                              <div className="text-xs text-muted-foreground">{b.location || b.Nearest_Landmark}</div>
-                              <div className="text-xs">الحجم: {b.size || b.Size} • {b.city || b.City}</div>
+                              <div className="font-semibold">{(b as any).name || (b as any).Billboard_Name}</div>
+                              <div className="text-xs text-muted-foreground">{(b as any).location || (b as any).Nearest_Landmark}</div>
+                              <div className="text-xs">الحجم: {(b as any).size || (b as any).Size} • {(b as any).city || (b as any).City}</div>
                               <div className="text-xs font-medium mt-1">السعر: {totalForBoard.toLocaleString('ar-LY')} د.ل {months ? `/${months} شهر` : ''}</div>
                             </div>
-                            <Button size="sm" variant="destructive" onClick={() => removeSelected(String(b.ID))}>
+                            <Button size="sm" variant="destructive" onClick={() => removeSelected(String((b as any).ID))}>
                               <X className="h-4 w-4" />
                             </Button>
                           </div>
@@ -281,8 +293,14 @@ export default function ContractEdit() {
           </Card>
 
           {/* filters */}
-          <Card>
-            <CardContent className="p-4">
+          <Card className="bg-gradient-card border-0 shadow-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Search className="h-5 w-5 text-primary" />
+                البحث والتصفية
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex-1 relative min-w-[220px]">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -314,33 +332,36 @@ export default function ContractEdit() {
           </Card>
 
           {/* grid below */}
-          <Card>
+          <Card className="bg-gradient-card border-0 shadow-card">
             <CardHeader>
-              <CardTitle>كل اللوحات</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-primary" />
+                كل اللوحات ({filtered.length})
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-10 text-center">جاري ��لتحميل...</div>
+                <div className="py-10 text-center">جاري التحميل...</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filtered.map((b) => {
-                    const isSelected = selected.includes(String(b.ID));
-                    const st = (b.status || b.Status || '').toString();
-                    const notAvailable = st === 'rented' || (!!b.contractNumber || !!b.Contract_Number);
+                    const isSelected = selected.includes(String((b as any).ID));
+                    const st = ((b as any).status || (b as any).Status || '').toString();
+                    const notAvailable = st === 'rented' || (!!(b as any).contractNumber || !!(b as any).Contract_Number);
                     const disabled = notAvailable && !isSelected;
                     return (
-                      <Card key={b.ID} className={`overflow-hidden ${disabled ? 'opacity-60' : ''}`}>
+                      <Card key={(b as any).ID} className={`overflow-hidden ${disabled ? 'opacity-60' : ''}`}>
                         <CardContent className="p-0">
-                          {b.image && (
-                            <img src={b.image} alt={b.name || b.Billboard_Name} className="w-full h-40 object-cover" />
+                          {(b as any).image && (
+                            <img src={(b as any).image} alt={(b as any).name || (b as any).Billboard_Name} className="w-full h-40 object-cover" />
                           )}
                           <div className="p-3 space-y-1">
-                            <div className="font-semibold">{b.name || b.Billboard_Name}</div>
-                            <div className="text-xs text-muted-foreground">{b.location || b.Nearest_Landmark}</div>
-                            <div className="text-xs">{b.city || b.City} • {b.size || b.Size}</div>
-                            <div className="text-sm font-medium">{(Number(b.price) || 0).toLocaleString('ar-LY')} د.ل / شهر</div>
+                            <div className="font-semibold">{(b as any).name || (b as any).Billboard_Name}</div>
+                            <div className="text-xs text-muted-foreground">{(b as any).location || (b as any).Nearest_Landmark}</div>
+                            <div className="text-xs">{(b as any).city || (b as any).City} • {(b as any).size || (b as any).Size}</div>
+                            <div className="text-sm font-medium">{(Number((b as any).price) || 0).toLocaleString('ar-LY')} د.ل / شهر</div>
                             <div className="pt-2">
-                              <Button size="sm" variant={isSelected ? 'destructive' : 'outline'} onClick={() => toggleSelect(b)} disabled={disabled}>
+                              <Button size="sm" variant={isSelected ? 'destructive' : 'outline'} onClick={() => toggleSelect(b as any)} disabled={disabled}>
                                 {isSelected ? 'إزالة' : 'إضافة'}
                               </Button>
                             </div>
@@ -357,9 +378,12 @@ export default function ContractEdit() {
 
         {/* sidebar */}
         <div className="w-full lg:w-[360px] space-y-4">
-          <Card>
+          <Card className="bg-gradient-card border-0 shadow-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> بيانات الزبون</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5 text-primary" /> 
+                بيانات الزبون
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -375,11 +399,17 @@ export default function ContractEdit() {
                       <CommandInput placeholder="ابحث أو اكتب اسم جديد" value={customerQuery} onValueChange={setCustomerQuery} />
                       <CommandList>
                         <CommandEmpty>
-                          <Button variant="ghost" className="w-full justify-start" onClick={() => {
+                          <Button variant="ghost" className="w-full justify-start" onClick={async () => {
                             if (customerQuery.trim()) {
                               const name = customerQuery.trim();
-                              setCustomerName(name);
-                              setCustomers((prev) => prev.includes(name) ? prev : [name, ...prev]);
+                              try {
+                                const { data: newC, error } = await (supabase as any).from('customers').insert({ name }).select().single();
+                                if (!error && newC && (newC as any).id) {
+                                  setCustomerId((newC as any).id);
+                                  setCustomerName(name);
+                                  setCustomers(prev => [{ id: (newC as any).id, name }, ...prev]);
+                                }
+                              } catch (e) { console.warn(e); }
                               setCustomerOpen(false);
                               setCustomerQuery('');
                             }
@@ -389,21 +419,28 @@ export default function ContractEdit() {
                         </CommandEmpty>
                         <CommandGroup>
                           {customers.map((c) => (
-                            <CommandItem key={c} value={c} onSelect={() => {
-                              setCustomerName(c);
+                            <CommandItem key={c.id} value={c.name} onSelect={() => {
+                              setCustomerName(c.name);
+                              setCustomerId(c.id);
                               setCustomerOpen(false);
                               setCustomerQuery('');
                             }}>
-                              {c}
+                              {c.name}
                             </CommandItem>
                           ))}
-                          {customerQuery && !customers.includes(customerQuery.trim()) && (
+                          {customerQuery && !customers.some(x => x.name === customerQuery.trim()) && (
                             <CommandItem
                               value={`__add_${customerQuery}`}
-                              onSelect={() => {
+                              onSelect={async () => {
                                 const name = customerQuery.trim();
-                                setCustomerName(name);
-                                setCustomers((prev) => prev.includes(name) ? prev : [name, ...prev]);
+                                try {
+                                  const { data: newC, error } = await (supabase as any).from('customers').insert({ name }).select().single();
+                                  if (!error && newC && (newC as any).id) {
+                                    setCustomerId((newC as any).id);
+                                    setCustomerName(name);
+                                    setCustomers(prev => [{ id: (newC as any).id, name }, ...prev]);
+                                  }
+                                } catch (e) { console.warn(e); }
                                 setCustomerOpen(false);
                                 setCustomerQuery('');
                               }}
@@ -436,9 +473,12 @@ export default function ContractEdit() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gradient-card border-0 shadow-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Calendar className="h-5 w-5" /> المدة</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-primary" /> 
+                المدة والتواريخ
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>

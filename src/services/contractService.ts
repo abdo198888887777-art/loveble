@@ -21,57 +21,216 @@ interface ContractCreate {
   billboard_ids?: string[];
 }
 
-// إنشاء عقد جديد
+// إنشاء عقد جديد مع معالجة محسنة للأخطاء
 export async function createContract(contractData: ContractData) {
+  console.log('Creating contract with data:', contractData);
+  
   // فصل معرفات اللوحات عن بيانات العقد
   const { billboard_ids, ...contractPayload } = contractData;
-  
-  // إنشاء العقد
-  const { data: contract, error: contractError } = await supabase
-    .from('Contract')
-    .insert({
-      'Customer Name': contractPayload.customer_name,
-      'Ad Type': contractPayload.ad_type || '',
-      'Contract Date': contractPayload.start_date,
-      'End Date': contractPayload.end_date,
-      'Total Rent': contractPayload.rent_cost,
-      'Discount': contractPayload.discount ?? null
-    })
-    .select()
-    .single();
 
-  if (contractError) throw contractError;
+  // Determine customer_id: prefer explicit, else find by name, else create new customer
+  let customer_id: string | null = (contractData as any).customer_id || null;
+
+  if (!customer_id && contractPayload.customer_name) {
+    try {
+      const nameTrim = String(contractPayload.customer_name).trim();
+      const { data: existing, error: exErr } = await supabase
+        .from('customers')
+        .select('id')
+        .ilike('name', nameTrim)
+        .limit(1)
+        .maybeSingle();
+      
+      if (!exErr && existing && (existing as any).id) {
+        customer_id = (existing as any).id;
+      } else {
+        // create new customer
+        const { data: newC, error: newErr } = await supabase
+          .from('customers')
+          .insert({ name: nameTrim })
+          .select()
+          .single();
+        if (!newErr && newC && (newC as any).id) customer_id = (newC as any).id;
+      }
+    } catch (e) {
+      console.warn('Customer handling failed:', e);
+      // ignore and proceed without customer_id
+    }
+  }
+
+  // إعداد بيانات العقد للإدراج
+  const insertPayload: any = {
+    'Customer Name': contractPayload.customer_name,
+    'Ad Type': contractPayload.ad_type || '',
+    'Contract Date': contractPayload.start_date,
+    'End Date': contractPayload.end_date,
+    'Total Rent': contractPayload.rent_cost,
+    'Discount': contractPayload.discount ?? null
+  } as any;
+  // Optional legacy payments fields
+  if ((contractData as any)['Payment 1'] !== undefined) insertPayload['Payment 1'] = (contractData as any)['Payment 1'];
+  if ((contractData as any)['Payment 2'] !== undefined) insertPayload['Payment 2'] = (contractData as any)['Payment 2'];
+  if ((contractData as any)['Payment 3'] !== undefined) insertPayload['Payment 3'] = (contractData as any)['Payment 3'];
+  if ((contractData as any)['Total Paid'] !== undefined) insertPayload['Total Paid'] = (contractData as any)['Total Paid'];
+  if ((contractData as any)['Remaining'] !== undefined) insertPayload['Remaining'] = (contractData as any)['Remaining'];
+  if (customer_id) insertPayload.customer_id = customer_id;
+
+  console.log('Insert payload:', insertPayload);
+
+  let contract: any = null;
+  let contractError: any = null;
+
+  // محاولة الإدراج في جدول Contract أولاً
+  try {
+    const { data, error } = await supabase
+      .from('Contract')
+      .insert(insertPayload)
+      .select()
+      .single();
+    
+    contract = data;
+    contractError = error;
+    
+    if (error) {
+      console.warn('Failed to insert into Contract table:', error);
+    } else {
+      console.log('Successfully inserted into Contract table:', contract);
+    }
+  } catch (e) {
+    console.warn('Contract table insertion failed:', e);
+    contractError = e;
+  }
+
+  // إذا فشل الإدراج في جدول Contract، جرب جدول contracts
+  if (contractError || !contract) {
+    console.log('Trying contracts table...');
+    try {
+      const contractsPayload: any = {
+        customer_name: contractPayload.customer_name,
+        ad_type: contractPayload.ad_type || '',
+        start_date: contractPayload.start_date,
+        end_date: contractPayload.end_date,
+        rent_cost: contractPayload.rent_cost,
+        discount: contractPayload.discount ?? null
+      };
+      // mirror payments fields when using alternative table if it supports them
+      if ((contractData as any)['Total Paid'] !== undefined) contractsPayload.total_paid = (contractData as any)['Total Paid'];
+      if ((contractData as any)['Remaining'] !== undefined) contractsPayload.remaining = (contractData as any)['Remaining'];
+      if (customer_id) contractsPayload.customer_id = customer_id;
+
+      const { data, error } = await supabase
+        .from('contracts')
+        .insert(contractsPayload)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Failed to insert into contracts table:', error);
+        throw error;
+      }
+
+      contract = data;
+      console.log('Successfully inserted into contracts table:', contract);
+    } catch (e) {
+      console.error('Both Contract and contracts table insertion failed:', e);
+      throw new Error('فشل في حفظ العقد في قاعدة البيانات. تأكد من إعدادات قاعدة البيانات والأذونات.');
+    }
+  }
+
+  if (!contract) {
+    throw new Error('فشل في إنشاء العقد');
+  }
 
   // تحديث اللوحات المرتبطة بالعقد
   if (billboard_ids && billboard_ids.length > 0) {
-    for (const billboard_id of billboard_ids) {
-      const newContractNumber = (contract as any)?.Contract_Number ?? (contract as any)?.['Contract Number'];
-      const { error: billboardError } = await supabase
-        .from('billboards')
-        .update({
-          Contract_Number: newContractNumber,
-          Rent_Start_Date: contractData.start_date,
-          Rent_End_Date: contractData.end_date,
-          Customer_Name: contractData.customer_name,
-          Status: 'rented'
-        })
-        .eq('ID', Number(billboard_id));
+    console.log('Updating billboards with contract:', billboard_ids);
+    
+    const newContractNumber = contract?.Contract_Number ?? contract?.id ?? contract?.contract_number;
+    
+    if (!newContractNumber) {
+      console.warn('No contract number found, skipping billboard updates');
+    } else {
+      for (const billboard_id of billboard_ids) {
+        try {
+          const { error: billboardError } = await supabase
+            .from('billboards')
+            .update({
+              Contract_Number: newContractNumber,
+              Rent_Start_Date: contractData.start_date,
+              Rent_End_Date: contractData.end_date,
+              Customer_Name: contractData.customer_name,
+              Status: 'rented'
+            })
+            .eq('ID', Number(billboard_id));
 
-      if (billboardError) throw billboardError;
+          if (billboardError) {
+            console.error(`Failed to update billboard ${billboard_id}:`, billboardError);
+            // لا نوقف العملية بسبب فشل تحديث لوحة واحدة
+          } else {
+            console.log(`Successfully updated billboard ${billboard_id}`);
+          }
+        } catch (e) {
+          console.error(`Error updating billboard ${billboard_id}:`, e);
+        }
+      }
     }
   }
 
   return contract;
 }
 
-// جلب جميع العقود
+// جلب جميع العقود مع معالجة محسنة
 export async function getContracts() {
-  const { data, error } = await supabase
-    .from('Contract')
-    .select('*')
-    .order('"Contract Date"', { ascending: false });
+  let data: any[] = [];
+  
+  // محاولة جلب من جدول Contract أولاً
+  try {
+    const { data: contractData, error: contractError } = await supabase
+      .from('Contract')
+      .select('*')
+      .order('Contract_Number', { ascending: false });
 
-  if (error) throw error;
+    if (!contractError && Array.isArray(contractData)) {
+      data = contractData;
+      console.log('Fetched contracts from Contract table:', data.length);
+    } else {
+      console.warn('Contract table query failed:', contractError);
+    }
+  } catch (e) {
+    console.warn('Contract table access failed:', e);
+  }
+
+  // إذا لم نحصل على بيانات، جرب جدول contracts
+  if (data.length === 0) {
+    try {
+      const { data: contractsData, error: contractsError } = await supabase
+        .from('contracts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!contractsError && Array.isArray(contractsData)) {
+        // تحويل البيانات من تنسيق contracts إلى تنسيق Contract
+        data = contractsData.map((c: any) => ({
+          Contract_Number: c.id,
+          'Contract Number': c.id,
+          'Customer Name': c.customer_name,
+          'Contract Date': c.start_date,
+          'End Date': c.end_date,
+          'Ad Type': c.ad_type,
+          'Total Rent': c.rent_cost,
+          Discount: c.discount,
+          customer_id: c.customer_id,
+          ...c
+        }));
+        console.log('Fetched contracts from contracts table:', data.length);
+      } else {
+        console.warn('contracts table query failed:', contractsError);
+      }
+    } catch (e) {
+      console.warn('contracts table access failed:', e);
+    }
+  }
+
   return (data || []).map((c: any) => {
     const id = c.Contract_Number ?? c['Contract Number'] ?? c.id ?? c.ID;
     return {
@@ -79,6 +238,7 @@ export async function getContracts() {
       id,
       Contract_Number: c.Contract_Number ?? c['Contract Number'] ?? id,
       'Contract Number': c['Contract Number'] ?? c.Contract_Number ?? id,
+      customer_id: c.customer_id ?? null,
       customer_name: c.customer_name ?? c['Customer Name'] ?? c.Customer_Name ?? '',
       ad_type: c.ad_type ?? c['Ad Type'] ?? c.Ad_Type ?? '',
       start_date: c.start_date ?? c['Contract Date'] ?? c.contract_date ?? '',
@@ -92,23 +252,63 @@ export async function getContracts() {
 // جلب عقد مع اللوحات المرتبطة به
 export async function getContractWithBillboards(contractId: string): Promise<any> {
   try {
-    let contractResult: any = await (supabase as any)
-      .from('Contract')
-      .select('*')
-      .eq('Contract_Number', contractId)
-      .single();
+    let contractResult: any = null;
+    let contractError: any = null;
 
-    if (contractResult.error) {
-      contractResult = await (supabase as any)
+    // محاولة جلب من جدول Contract أولاً
+    try {
+      const result = await supabase
         .from('Contract')
         .select('*')
-        .eq('"Contract Number"', contractId)
+        .eq('Contract_Number', contractId)
         .single();
+      
+      contractResult = result;
+      contractError = result.error;
+    } catch (e) {
+      contractError = e;
     }
 
-    if (contractResult.error) throw contractResult.error;
+    // إذا فشل، جرب جدول contracts
+    if (contractError || !contractResult?.data) {
+      try {
+        const result = await supabase
+          .from('contracts')
+          .select('*')
+          .eq('id', contractId)
+          .single();
+        
+        if (!result.error && result.data) {
+          // تحويل البيانات إلى التنسيق المتوقع
+          const c = result.data;
+          contractResult = {
+            data: {
+              Contract_Number: c.id,
+              'Contract Number': c.id,
+              'Customer Name': c.customer_name,
+              'Contract Date': c.start_date,
+              'End Date': c.end_date,
+              'Ad Type': c.ad_type,
+              'Total Rent': c.rent_cost,
+              Discount: c.discount,
+              customer_id: c.customer_id,
+              ...c
+            },
+            error: null
+          };
+        } else {
+          contractError = result.error;
+        }
+      } catch (e) {
+        contractError = e;
+      }
+    }
 
-    const billboardResult: any = await (supabase as any)
+    if (contractError || !contractResult?.data) {
+      throw contractError || new Error('Contract not found');
+    }
+
+    const billboardResult = await supabase
       .from('billboards')
       .select('*')
       .eq('Contract_Number', contractId);
@@ -119,6 +319,7 @@ export async function getContractWithBillboards(contractId: string): Promise<any
       id: c.Contract_Number ?? c['Contract Number'] ?? c.id ?? c.ID,
       Contract_Number: c.Contract_Number ?? c['Contract Number'],
       'Contract Number': c['Contract Number'] ?? c.Contract_Number,
+      customer_id: c.customer_id ?? null,
       customer_name: c.customer_name ?? c['Customer Name'] ?? c.Customer_Name ?? '',
       ad_type: c.ad_type ?? c['Ad Type'] ?? c.Ad_Type ?? '',
       start_date: c.start_date ?? c['Contract Date'] ?? c.contract_date ?? '',
@@ -131,6 +332,7 @@ export async function getContractWithBillboards(contractId: string): Promise<any
       billboards: (billboardResult.data || []) as any[],
     };
   } catch (error) {
+    console.error('Error in getContractWithBillboards:', error);
     throw error;
   }
 }
@@ -147,26 +349,107 @@ export async function getAvailableBillboards() {
   return data;
 }
 
-// تحديث عقد
+// تحديث عقد مع معالجة محسنة
 export async function updateContract(contractId: string, updates: any) {
-  let result: any = await (supabase as any)
-    .from('Contract')
-    .update(updates)
-    .eq('Contract_Number', contractId)
-    .select()
-    .single();
+  if (!contractId) throw new Error('Contract_Number مفقود');
 
-  if (result.error) {
-    result = await (supabase as any)
+  console.log('Updating contract:', contractId, 'with:', updates);
+
+  const payload: any = { ...updates };
+  if (payload['Total Rent'] !== undefined) payload['Total Rent'] = Number(payload['Total Rent']) || 0;
+  if (payload['Total'] !== undefined) payload['Total'] = Number(payload['Total']) || 0;
+  if (payload['Total Paid'] !== undefined) payload['Total Paid'] = Number(payload['Total Paid']) || 0;
+
+  let success = false;
+  let data: any = null;
+  let error: any = null;
+
+  // محاولة التحديث في جدول Contract أولاً
+  try {
+    const result = await supabase
       .from('Contract')
-      .update(updates)
-      .eq('"Contract Number"', contractId)
+      .update(payload)
+      .eq('Contract_Number', contractId)
       .select()
-      .single();
+      .limit(1);
+    
+    data = result.data;
+    error = result.error;
+    
+    if (!error && data && data.length > 0) {
+      success = true;
+      console.log('Successfully updated Contract table');
+    }
+  } catch (e) {
+    console.warn('Contract table update failed:', e);
+    error = e;
   }
 
-  if (result.error) throw result.error;
-  return result.data;
+  // إذا فشل التحديث في Contract، جرب contracts
+  if (!success) {
+    try {
+      const contractsPayload: any = {};
+      
+      // تحويل أسماء الحقول
+      if (payload['Customer Name']) contractsPayload.customer_name = payload['Customer Name'];
+      if (payload['Ad Type']) contractsPayload.ad_type = payload['Ad Type'];
+      if (payload['Contract Date']) contractsPayload.start_date = payload['Contract Date'];
+      if (payload['End Date']) contractsPayload.end_date = payload['End Date'];
+      if (payload['Total Rent']) contractsPayload.rent_cost = payload['Total Rent'];
+      if (payload['Discount']) contractsPayload.discount = payload['Discount'];
+      if (payload.customer_id) contractsPayload.customer_id = payload.customer_id;
+
+      const result = await supabase
+        .from('contracts')
+        .update(contractsPayload)
+        .eq('id', contractId)
+        .select()
+        .limit(1);
+      
+      data = result.data;
+      error = result.error;
+      
+      if (!error && data && data.length > 0) {
+        success = true;
+        console.log('Successfully updated contracts table');
+      }
+    } catch (e) {
+      console.warn('contracts table update failed:', e);
+      error = e;
+    }
+  }
+
+  // محاولة أخيرة بمعرف رقمي
+  if (!success) {
+    const numericId = /^\d+$/.test(String(contractId)) ? Number(contractId) : null;
+    if (numericId !== null) {
+      try {
+        const result = await supabase
+          .from('Contract')
+          .update(payload)
+          .eq('Contract_Number', numericId)
+          .select()
+          .limit(1);
+        
+        data = result.data;
+        error = result.error;
+        
+        if (!error && data && data.length > 0) {
+          success = true;
+          console.log('Successfully updated with numeric ID');
+        }
+      } catch (e) {
+        console.warn('Numeric ID update failed:', e);
+      }
+    }
+  }
+
+  if (!success) {
+    console.error('All update attempts failed. Last error:', error);
+    throw error || new Error('لم يتم حفظ أي تغييرات (RLS أو رقم العقد غير صحيح)');
+  }
+
+  return Array.isArray(data) ? data[0] : data;
 }
 
 // تحديث العقود المنتهية الصلاحية
@@ -184,11 +467,7 @@ export async function updateExpiredContracts() {
 
 // إحصائيات العقود
 export async function getContractsStats() {
-  const { data: contracts, error } = await supabase
-    .from('Contract')
-    .select('*');
-
-  if (error) throw error;
+  const contracts = await getContracts();
   
   const today = new Date();
   const stats = {
@@ -204,15 +483,10 @@ export async function getContractsStats() {
 export async function autoReleaseExpiredBillboards() {
   const today = new Date().toISOString().split('T')[0];
   
-  const { data: expiredContracts, error: fetchError } = await supabase
-    .from('Contract')
-    .select('"Contract Number", "End Date"')
-    .lt('"End Date"', today);
+  const contracts = await getContracts();
+  const expiredContracts = contracts.filter(c => c['End Date'] && c['End Date'] < today);
 
-  if (fetchError) throw fetchError;
-
-  for (const contract of expiredContracts || []) {
-    // تحديث اللوحات المرتبطة بهذا العقد
+  for (const contract of expiredContracts) {
     await supabase
       .from('billboards')
       .update({
@@ -222,7 +496,7 @@ export async function autoReleaseExpiredBillboards() {
         Rent_Start_Date: null,
         Rent_End_Date: null
       })
-      .eq('Contract_Number', contract['Contract Number']);
+      .eq('Contract_Number', contract.Contract_Number);
   }
 }
 
@@ -239,16 +513,18 @@ export async function deleteContract(contractNumber: string) {
     })
     .eq('Contract_Number', contractNumber);
 
-  let result: any = await (supabase as any)
+  // محاولة حذف من جدول Contract أولاً
+  let result = await supabase
     .from('Contract')
     .delete()
     .eq('Contract_Number', contractNumber);
 
+  // إذا فشل، جرب جدول contracts
   if (result.error) {
-    result = await (supabase as any)
-      .from('Contract')
+    result = await supabase
+      .from('contracts')
       .delete()
-      .eq('"Contract Number"', contractNumber);
+      .eq('id', contractNumber);
   }
 
   if (result.error) throw result.error;

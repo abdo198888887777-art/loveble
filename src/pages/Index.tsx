@@ -45,7 +45,7 @@ const Index = () => {
     } catch (error) {
       toast({
         title: "خطأ في تحميل البيانات",
-        description: "تعذر تحميل اللوحات الإعلانية",
+        description: "تعذر تحميل اللوحا�� الإعلانية",
         variant: "destructive"
       });
     } finally {
@@ -54,9 +54,21 @@ const Index = () => {
   };
 
   const filteredBillboards = billboards.filter(billboard => {
-    const matchesSearch = billboard.Billboard_Name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         billboard.District?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         billboard.City?.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.trim().toLowerCase();
+    const matchesSearch = !q || [
+      billboard.Billboard_Name,
+      billboard.District,
+      billboard.City,
+      billboard.Municipality,
+      billboard.Nearest_Landmark,
+      billboard.Size,
+      billboard.Level,
+      (billboard as any).Customer_Name,
+      (billboard as any).Ad_Type,
+      (billboard as any)['Ad Type'],
+      String(billboard.ID),
+      String((billboard as any).Contract_Number ?? (billboard as any)['Contract Number'] ?? '')
+    ].some((v) => String(v || '').toLowerCase().includes(q));
     const matchesSize = sizeFilter === 'all' || billboard.Size === sizeFilter;
     const matchesMunicipality = municipalityFilter === 'all' || (billboard.Municipality ?? '') === municipalityFilter;
     const adTypeVal = String((billboard as any).Ad_Type ?? (billboard as any)['Ad Type'] ?? '');
@@ -88,12 +100,18 @@ const Index = () => {
 
     let finalStatusMatch = false;
     if (isAdmin) {
-      finalStatusMatch =
-        statusFilter === 'all' ||
-        (statusFilter === 'available' && isAvailable) ||
-        (statusFilter === 'booked' && isBooked) ||
-        (statusFilter === 'maintenance' && isMaintenance) ||
-        (statusFilter === 'near-expiry' && isNearExpiry);
+      if (statusFilter === 'booked') {
+        finalStatusMatch = isBooked;
+      } else if (statusFilter === 'all') {
+        const hideBookedByDefault = q.length === 0;
+        finalStatusMatch = hideBookedByDefault ? !isBooked : true;
+      } else {
+        finalStatusMatch = (
+          (statusFilter === 'available' && isAvailable) ||
+          (statusFilter === 'maintenance' && isMaintenance) ||
+          (statusFilter === 'near-expiry' && isNearExpiry)
+        );
+      }
     } else if (myOnly && isAllowedBoard) {
       // العميل يستطيع رؤية لوحاته حتى لو كانت محجوزة/صيانة
       finalStatusMatch =
@@ -103,14 +121,19 @@ const Index = () => {
         (statusFilter === 'maintenance' && isMaintenance) ||
         (statusFilter === 'near-expiry' && isNearExpiry);
     } else {
-      if (statusFilter === 'available') {
-        finalStatusMatch = isAvailable;
-      } else if (statusFilter === 'near-expiry') {
-        finalStatusMatch = isNearExpiry;
-      } else if (statusFilter === 'all') {
-        finalStatusMatch = isAvailable || isNearExpiry;
+      // الز��ار: لا تظهر المحجوز إطلاقاً حتى مع البحث، ولا تعرض القريبة الانتهاء
+      if (!user) {
+        finalStatusMatch = (statusFilter === 'available' || statusFilter === 'all') ? isAvailable : false;
       } else {
-        finalStatusMatch = false;
+        if (statusFilter === 'available') {
+          finalStatusMatch = isAvailable;
+        } else if (statusFilter === 'near-expiry') {
+          finalStatusMatch = isNearExpiry;
+        } else if (statusFilter === 'all') {
+          finalStatusMatch = isAvailable || isNearExpiry;
+        } else {
+          finalStatusMatch = false;
+        }
       }
     }
 
@@ -196,10 +219,7 @@ const Index = () => {
         
         <div className="relative z-10 text-center max-w-4xl mx-auto px-4">
           <div className="mb-6">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/20 backdrop-blur-sm rounded-full border border-primary/30 mb-4">
-              <img src={BRAND_LOGO} alt={BRAND_NAME} className="h-5 w-5 rounded-sm object-cover" />
-              <span className="text-primary text-sm font-medium">{BRAND_NAME}</span>
-            </div>
+            <img src={BRAND_LOGO} alt={BRAND_NAME} className="mx-auto h-16 md:h-20 w-auto" />
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
@@ -212,7 +232,7 @@ const Index = () => {
           <p className="text-xl md:text-2xl text-gray-200 mb-8 leading-relaxed">
             منصة متكاملة لحجز وإدارة اللوحات الإعلانية الطرقي��
             <br />
-            بأسعار تنافسية وخدمة مميزة على مدار الساعة
+            بأسع��ر تنافسية وخدمة مميزة على مدار الساعة
           </p>
           
           <div className="flex items-center justify-center gap-4 mb-12">
@@ -250,14 +270,8 @@ const Index = () => {
       <header className="bg-card/95 backdrop-blur-sm border-b border-border/50 sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-primary rounded-lg">
-                <img src={BRAND_LOGO} alt={BRAND_NAME} className="h-6 w-6 rounded-sm object-cover" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-foreground">{BRAND_NAME}</h2>
-                <p className="text-sm text-muted-foreground">اختر من بين أفضل المواقع الإعلاني��</p>
-              </div>
+            <div className="flex items-center">
+              <img src={BRAND_LOGO} alt={BRAND_NAME} className="h-10 md:h-12 w-auto" />
             </div>
             <div className="flex items-center gap-4">
               <Badge variant="outline" className="gap-2">
@@ -353,27 +367,29 @@ const Index = () => {
                 </SelectContent>
               </Select>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    {adTypeFilter === 'all' ? 'نوع الإعلان (الكل)' : `نوع الإعلان: ${adTypeFilter}`}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72 p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="ابحث عن نوع الإعلان..." />
-                    <CommandList>
-                      <CommandEmpty>لا يوجد نتائج</CommandEmpty>
-                      <CommandGroup>
-                        <CommandItem onSelect={() => setAdTypeFilter('all')}>الكل</CommandItem>
-                        {uniqueAdTypes.map((t) => (
-                          <CommandItem key={t} onSelect={() => setAdTypeFilter(t)}>{t}</CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              {user && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      {adTypeFilter === 'all' ? 'نوع الإعلان (الكل)' : `نوع الإعلان: ${adTypeFilter}`}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="ابحث ع�� نوع الإعلان..." />
+                      <CommandList>
+                        <CommandEmpty>لا يوجد نتائج</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem onSelect={() => setAdTypeFilter('all')}>الكل</CommandItem>
+                          {uniqueAdTypes.map((t) => (
+                            <CommandItem key={t} onSelect={() => setAdTypeFilter(t)}>{t}</CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
 
               {user && (
                 <div className="flex items-center gap-2 px-3 py-2 border rounded-md">
@@ -426,7 +442,7 @@ const Index = () => {
 
         {/* Billboards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredBillboards.map((billboard) => (
+          {filteredBillboards.slice(0, 10).map((billboard) => (
             <BillboardGridCard
               key={billboard.ID}
               billboard={billboard}
@@ -439,7 +455,7 @@ const Index = () => {
           <div className="text-center py-12">
             <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">لا توجد نتائج</h3>
-            <p className="text-muted-foreground">جرب تعديل معايير البحث أو الفلترة</p>
+            <p className="text-muted-foreground">جرب تعديل مع��يير البحث أو الفلترة</p>
           </div>
         )}
       </div>
