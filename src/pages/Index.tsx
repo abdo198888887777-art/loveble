@@ -27,7 +27,7 @@ const Index = () => {
   const [selectedBillboards, setSelectedBillboards] = useState<Billboard[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sizeFilter, setSizeFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('متاحة');
   const [loading, setLoading] = useState(true);
   const [myOnly, setMyOnly] = useState(false);
   const [selectedContractNumbers, setSelectedContractNumbers] = useState<string[]>([]);
@@ -101,44 +101,10 @@ const Index = () => {
     const customerName = String(billboard.Customer_Name ?? '').trim().toLowerCase();
     const isAllowedBoard = allowed.length > 0 && allowed.includes(customerName);
 
-    let finalStatusMatch = false;
-    if (isAdmin) {
-      if (statusFilter === 'مؤجر') {
-        finalStatusMatch = isBooked;
-      } else if (statusFilter === 'all') {
-        const hideBookedByDefault = q.length === 0;
-        finalStatusMatch = hideBookedByDefault ? !isBooked : true;
-      } else {
-        finalStatusMatch = (
-          (statusFilter === 'متاح' && isAvailable) ||
-          (statusFilter === 'صيانة' && isMaintenance) ||
-          (statusFilter === 'near-expiry' && isNearExpiry)
-        );
-      }
-    } else if (myOnly && isAllowedBoard) {
-      // العميل يستطيع رؤية لوحاته حتى لو كانت محجوزة/صيانة
-      finalStatusMatch =
-        statusFilter === 'all' ||
-        (statusFilter === 'available' && isAvailable) ||
-        (statusFilter === 'booked' && isBooked) ||
-        (statusFilter === 'maintenance' && isMaintenance) ||
-        (statusFilter === 'near-expiry' && isNearExpiry);
-    } else {
-      // الز  ار: لا تظهر المحجوز إطلاقاً حتى مع البحث، ولا تعرض القريبة الانتهاء
-      if (!user) {
-        finalStatusMatch = (statusFilter === 'متاح' || statusFilter === 'all') ? isAvailable : false;
-      } else {
-        if (statusFilter === 'متاح') {
-          finalStatusMatch = isAvailable;
-        } else if (statusFilter === 'near-expiry') {
-          finalStatusMatch = isNearExpiry;
-        } else if (statusFilter === 'all') {
-          finalStatusMatch = isAvailable || isNearExpiry;
-        } else {
-          finalStatusMatch = false;
-        }
-      }
-    }
+    const finalStatusMatch =
+      (statusFilter === 'متاحة' && isAvailable) ||
+      (statusFilter === 'مح��وز' && isBooked) ||
+      (statusFilter === 'قريبة الانتهاء' && isNearExpiry);
 
     const boardContract = String((billboard as any).Contract_Number ?? (billboard as any)['Contract Number'] ?? '').trim();
     const appliesContractFilter = isAdmin ? selectedContractNumbers.length > 0 : (myOnly && selectedContractNumbers.length > 0);
@@ -361,15 +327,9 @@ const Index = () => {
                   <SelectValue placeholder="حالة اللوحة" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">جميع الحالات</SelectItem>
-                  <SelectItem value="متاح">متاحة</SelectItem>
-                  <SelectItem value="near-expiry">قريبة الانتهاء</SelectItem>
-                  {isAdmin && (
-                    <>
-                      <SelectItem value="مؤجر">مؤجرة</SelectItem>
-                      <SelectItem value="صيانة">صيانة</SelectItem>
-                    </>
-                  )}
+                  <SelectItem value="متاحة">متاحة</SelectItem>
+                  <SelectItem value="قريبة الانتهاء">قريبة الانتهاء</SelectItem>
+                  <SelectItem value="محجوز">محجوز</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -378,7 +338,7 @@ const Index = () => {
                   <SelectValue placeholder="البلدية" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">جميع البلديات</SelectItem>
+                  <SelectItem value="all">جميع الب��ديات</SelectItem>
                   {uniqueMunicipalities.map((m) => (
                     <SelectItem key={m} value={m}>{m}</SelectItem>
                   ))}

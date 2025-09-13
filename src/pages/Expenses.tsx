@@ -19,6 +19,11 @@ export default function Expenses() {
   const [selected, setSelected] = useState<any>(null);
   const [rates, setRates] = useState<Record<string, { install: number; print: number }>>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
+  // Filters
+  const [fromContract, setFromContract] = useState<string>('');
+  const [toContract, setToContract] = useState<string>('');
+  const [fromMonth, setFromMonth] = useState<string>(''); // yyyy-mm
+  const [toMonth, setToMonth] = useState<string>('');
 
   // Global 3% pool states
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
@@ -114,6 +119,35 @@ export default function Expenses() {
     }).slice(0, 8);
   }, [contracts, searchQuery]);
 
+  const contractIds = useMemo(() => (contracts as any[]).map(c => String(c.id ?? c.Contract_Number ?? '')).filter(Boolean).sort((a,b)=>{
+    const na = Number(a), nb = Number(b);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  }), [contracts]);
+
+  const cmpIds = (a: string, b: string) => {
+    const na = Number(a), nb = Number(b);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  };
+
+  const inRange = (id: string) => {
+    if (fromContract && cmpIds(id, fromContract) < 0) return false;
+    if (toContract && cmpIds(id, toContract) > 0) return false;
+    return true;
+  };
+
+  const inMonthRange = (c: any) => {
+    if (!fromMonth && !toMonth) return true;
+    const dStr = String(c['Contract Date'] ?? c.start_date ?? c['Start Date'] ?? c['End Date'] ?? '');
+    const d = dStr ? new Date(dStr) : null;
+    if (!d) return false;
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (fromMonth && ym < fromMonth) return false;
+    if (toMonth && ym > toMonth) return false;
+    return true;
+  };
+
   const calc = useMemo(() => {
     if (!selected) return { total: 0, install: 0, print: 0, net: 0, fee3: 0, rows: [] as any[] };
     const total = Number(selected.rent_cost || (selected as any)['Total Rent'] || 0) || 0;
@@ -141,11 +175,12 @@ export default function Expenses() {
   const total3All = useMemo(() => {
     return (contracts || []).reduce((s, c: any) => {
       const id = String(c.id ?? c.Contract_Number ?? '');
+      if (!inRange(id) || !inMonthRange(c)) return s;
       if (excludedIds.has(id)) return s;
       const total = Number(c.rent_cost ?? c['Total Rent'] ?? 0) || 0;
       return s + Math.round(total * 0.03);
     }, 0);
-  }, [contracts, excludedIds]);
+  }, [contracts, excludedIds, fromContract, toContract, fromMonth, toMonth]);
 
   const totalWithdrawn = (withdrawals || []).reduce((s, w) => s + (Number(w.amount)||0), 0);
   const remaining3All = Math.max(0, total3All - totalWithdrawn);
@@ -249,6 +284,37 @@ export default function Expenses() {
               {selected && (
                 <div className="mt-2 text-sm text-muted-foreground">العقد الحالي: <span className="font-semibold">{String(selectedId)}</span> • {(selected.customer_name || selected['Customer Name'] || '')}</div>
               )}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">من عقد</div>
+                  <Select value={fromContract} onValueChange={setFromContract}>
+                    <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      {contractIds.map(id => (<SelectItem key={id} value={id}>{id}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">إلى عقد</div>
+                  <Select value={toContract} onValueChange={setToContract}>
+                    <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      {contractIds.map(id => (<SelectItem key={id} value={id}>{id}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">من شهر</div>
+                  <Input type="month" value={fromMonth} onChange={(e)=>setFromMonth(e.target.value)} />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">إلى شهر</div>
+                  <Input type="month" value={toMonth} onChange={(e)=>setToMonth(e.target.value)} />
+                </div>
+                <div className="md:col-span-4 flex gap-2">
+                  <Button variant="outline" size="sm" onClick={()=>{ setFromContract(''); setToContract(''); setFromMonth(''); setToMonth(''); }}>مسح التصفية</Button>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -354,7 +420,7 @@ export default function Expenses() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {contracts.map((c:any)=>{
+                {(contracts as any[]).filter(c => inRange(String(c.id ?? c.Contract_Number ?? '')) && inMonthRange(c)).map((c:any)=>{
                   const id = String(c.id ?? c.Contract_Number ?? '');
                   const total = Number(c.rent_cost ?? c['Total Rent'] ?? 0) || 0;
                   const fee = Math.round(total * 0.03);

@@ -48,6 +48,7 @@ export default function Customers() {
   const [allBillboards, setAllBillboards] = useState<Billboard[]>([]);
   const [selectedContractsForInv, setSelectedContractsForInv] = useState<string[]>([]);
   const [sizeCounts, setSizeCounts] = useState<Record<string, number>>({});
+  const [printPrices, setPrintPrices] = useState<Record<string, number>>({});
   const [prevDebt, setPrevDebt] = useState<string>('');
 
   // add/edit customer states
@@ -136,6 +137,29 @@ export default function Customers() {
     }
     setSizeCounts(counts);
   }, [selectedContractsForInv, allBillboards, selectedCustomerName]);
+
+  // load print prices for sizes in current selection
+  useEffect(() => {
+    const sizes = Object.keys(sizeCounts);
+    if (sizes.length === 0) { setPrintPrices({}); return; }
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('installation_print_pricing')
+          .select('size, print_price')
+          .in('size', sizes);
+        if (!error && Array.isArray(data)) {
+          const map: Record<string, number> = {};
+          (data as any[]).forEach((r) => { map[String(r.size)] = Number(r.print_price) || 0; });
+          setPrintPrices(map);
+        } else {
+          setPrintPrices({});
+        }
+      } catch {
+        setPrintPrices({});
+      }
+    })();
+  }, [sizeCounts]);
 
   // Build summary per customer using customers table, payments + contracts
   const customersSummary = useMemo(() => {
@@ -660,10 +684,10 @@ export default function Customers() {
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell>{(c as any).phone || '-'}</TableCell>
                     <TableCell>{(c as any).company || '-'}</TableCell>
-                    <TableCell>{c.contractsCount}</TableCell>
-                    <TableCell>{c.totalRent.toLocaleString('ar-LY')} د.ل</TableCell>
-                    <TableCell>{c.totalPaid.toLocaleString('ar-LY')} د.ل</TableCell>
-                    <TableCell>{(c.totalRent - c.totalPaid).toLocaleString('ar-LY')} د.ل</TableCell>
+                    <TableCell className="text-right">{c.contractsCount}</TableCell>
+                    <TableCell className="text-right font-semibold">{c.totalRent.toLocaleString('ar-LY')} د.ل</TableCell>
+                    <TableCell className="text-right text-green-600">{c.totalPaid.toLocaleString('ar-LY')} د.ل</TableCell>
+                    <TableCell className="text-right text-red-600 font-semibold">{(c.totalRent - c.totalPaid).toLocaleString('ar-LY')} د.ل</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => openCustomer(c.id)}>عرض فواتير الزبون</Button>
@@ -848,7 +872,7 @@ export default function Customers() {
               </Select>
             </div>
             <div>
-              <label className="text-sm font-medium">المبلغ</label>
+              <label className="text-sm font-medium">الم��لغ</label>
               <Input type="number" value={addAmount} onChange={(e)=>setAddAmount(e.target.value)} />
             </div>
             <div>
@@ -1003,6 +1027,8 @@ export default function Customers() {
                     <tr>
                       <th className="border px-2 py-1">المقاس</th>
                       <th className="border px-2 py-1">الكمية</th>
+                      <th className="border px-2 py-1">سعر الوحدة (طباعة)</th>
+                      <th className="border px-2 py-1">الإجمالي</th>
                       <th className="border px-2 py-1">إجراءات</th>
                     </tr>
                   </thead>
@@ -1012,17 +1038,25 @@ export default function Customers() {
                         <td colSpan={3} className="text-center text-sm text-muted-foreground py-2">لا توجد لوحات للعقود المحددة</td>
                       </tr>
                     )}
-                    {Object.entries(sizeCounts).map(([size, qty]) => (
-                      <tr key={size}>
-                        <td className="border px-2 py-1 text-center">{size}</td>
-                        <td className="border px-2 py-1 text-center">
-                          <Input type="number" className="w-24 mx-auto" value={String(qty)} onChange={(e)=> setSizeCounts((p)=> ({...p, [size]: Math.max(0, Number(e.target.value)||0)}))} />
-                        </td>
-                        <td className="border px-2 py-1 text-center">
-                          <Button variant="outline" size="sm" onClick={()=> setSizeCounts((p)=> { const c={...p}; delete c[size]; return c; })}>حذف</Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {Object.entries(sizeCounts).map(([size, qty]) => {
+                      const unit = Number(printPrices[size] || 0);
+                      const line = (Number(qty)||0) * unit;
+                      return (
+                        <tr key={size}>
+                          <td className="border px-2 py-1 text-center">{size}</td>
+                          <td className="border px-2 py-1 text-center">
+                            <Input type="number" className="w-24 mx-auto" value={String(qty)} onChange={(e)=> setSizeCounts((p)=> ({...p, [size]: Math.max(0, Number(e.target.value)||0)}))} />
+                          </td>
+                          <td className="border px-2 py-1 text-center">
+                            <Input type="number" className="w-28 mx-auto" value={String(unit)} onChange={(e)=> setPrintPrices((p)=> ({...p, [size]: Math.max(0, Number(e.target.value)||0)}))} />
+                          </td>
+                          <td className="border px-2 py-1 text-center">{line.toLocaleString('ar-LY')} د.ل</td>
+                          <td className="border px-2 py-1 text-center">
+                            <Button variant="outline" size="sm" onClick={()=> setSizeCounts((p)=> { const c={...p}; delete c[size]; return c; })}>حذف</Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1031,8 +1065,14 @@ export default function Customers() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={()=> setPrintInvOpen(false)}>إغلاق</Button>
               <Button onClick={()=>{
-                const items = Object.entries(sizeCounts).filter(([_,q])=> (Number(q)||0)>0);
-                const totalQty = items.reduce((s, [,q])=> s + (Number(q)||0), 0);
+                const entries = Object.entries(sizeCounts).filter(([_,q])=> (Number(q)||0)>0);
+                const rows = entries.map(([s,q])=> {
+                  const unit = Number(printPrices[s] || 0);
+                  const line = (Number(q)||0) * unit;
+                  return { size: s, qty: Number(q)||0, unit, line };
+                });
+                const totalQty = rows.reduce((s, r)=> s + r.qty, 0);
+                const grand = rows.reduce((s, r)=> s + r.line, 0);
                 const html = `
                 <html dir="rtl"><head><meta charset="utf-8"><title>فاتورة طباعة</title>
                 <style>body{font-family:Arial,sans-serif;padding:20px;max-width:800px;margin:auto} h1{font-size:22px} table{width:100%;border-collapse:collapse;margin-top:10px} th,td{border:1px solid #ddd;padding:8px;text-align:center} .right{text-align:right}</style>
@@ -1040,11 +1080,12 @@ export default function Customers() {
                   <h1>فاتورة طباعة</h1>
                   <div class="right">العميل: ${selectedCustomerName}</div>
                   <div class="right">العقود: ${selectedContractsForInv.join(', ')||'—'}</div>
-                  <table><thead><tr><th>المقاس</th><th>الكمية</th></tr></thead><tbody>
-                    ${items.map(([s,q])=> `<tr><td>${s}</td><td>${q}</td></tr>`).join('')}
+                  <table><thead><tr><th>المقاس</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>
+                    ${rows.map(r=> `<tr><td>${r.size}</td><td>${r.qty}</td><td>${r.unit.toLocaleString('ar-LY')} د.ل</td><td>${r.line.toLocaleString('ar-LY')} د.ل</td></tr>`).join('')}
                   </tbody></table>
                   ${prevDebt ? `<p class="right">دين سابق: ${Number(prevDebt).toLocaleString('ar-LY')} د.ل</p>` : ''}
                   <p class="right">إجمالي عدد اللوحات: ${totalQty}</p>
+                  <p class="right">الإجمالي النهائي: ${grand.toLocaleString('ar-LY')} د.ل</p>
                   <script>window.onload=function(){window.print();}</script>
                 </body></html>`;
                 const w = window.open('', '_blank');
