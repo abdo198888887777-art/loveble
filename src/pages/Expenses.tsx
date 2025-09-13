@@ -249,6 +249,37 @@ export default function Expenses() {
               {selected && (
                 <div className="mt-2 text-sm text-muted-foreground">العقد الحالي: <span className="font-semibold">{String(selectedId)}</span> • {(selected.customer_name || selected['Customer Name'] || '')}</div>
               )}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">من عقد</div>
+                  <Select value={fromContract} onValueChange={setFromContract}>
+                    <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      {contractIds.map(id => (<SelectItem key={id} value={id}>{id}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">إلى عقد</div>
+                  <Select value={toContract} onValueChange={setToContract}>
+                    <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                    <SelectContent>
+                      {contractIds.map(id => (<SelectItem key={id} value={id}>{id}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">من شهر</div>
+                  <Input type="month" value={fromMonth} onChange={(e)=>setFromMonth(e.target.value)} />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">إلى شهر</div>
+                  <Input type="month" value={toMonth} onChange={(e)=>setToMonth(e.target.value)} />
+                </div>
+                <div className="md:col-span-4 flex gap-2">
+                  <Button variant="outline" size="sm" onClick={()=>{ setFromContract(''); setToContract(''); setFromMonth(''); setToMonth(''); }}>مسح التصفية</Button>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
