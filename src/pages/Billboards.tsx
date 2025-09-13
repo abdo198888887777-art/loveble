@@ -110,8 +110,24 @@ export default function Billboards() {
 
   const addBillboard = async () => {
     setAdding(true);
-    const { Billboard_Name, City, Municipality, District, Nearest_Landmark, Size, Level, Image_URL, is_partnership, partner_companies, capital, capital_remaining } = addForm as any;
-    const payload: any = { Billboard_Name, City, Municipality, District, Nearest_Landmark, Size, Level, Image_URL, is_partnership: !!is_partnership, partner_companies: Array.isArray(partner_companies) ? partner_companies : String(partner_companies).split(',').map(s=>s.trim()).filter(Boolean), capital: Number(capital)||0, capital_remaining: Number(capital_remaining)||Number(capital)||0 };
+    const { ID, Billboard_Name, City, Municipality, District, Nearest_Landmark, GPS_Coordinates, Size, Level, Image_URL, Status, is_partnership, partner_companies, capital, capital_remaining } = addForm as any;
+    const payload: any = {
+      ID: Number(ID),
+      Billboard_Name,
+      City,
+      Municipality,
+      District,
+      Nearest_Landmark,
+      GPS_Coordinates: GPS_Coordinates || null,
+      Size,
+      Level,
+      Image_URL,
+      Status: Status || 'متاح',
+      is_partnership: !!is_partnership,
+      partner_companies: Array.isArray(partner_companies) ? partner_companies : String(partner_companies).split(',').map(s=>s.trim()).filter(Boolean),
+      capital: Number(capital)||0,
+      capital_remaining: Number(capital_remaining)||Number(capital)||0
+    };
     try {
       const { data, error } = await supabase.from('billboards').insert(payload).select().single();
       if (error) throw error;
@@ -172,7 +188,24 @@ export default function Billboards() {
   const searched = searchBillboards(billboards, searchQuery);
   const filteredBillboards = searched.filter((billboard) => {
     const statusValue = String(((billboard as any).Status ?? (billboard as any).status ?? '')).trim();
-    const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(statusValue);
+    const statusLower = statusValue.toLowerCase();
+    const hasContract = !!(((billboard as any).Contract_Number ?? (billboard as any).contractNumber));
+    const isAvailable = statusLower === 'available' || statusValue === 'متاح' || !hasContract;
+    const isBooked = statusLower === 'rented' || statusValue === 'مؤجر' || statusValue === 'محجوز' || (hasContract && !isAvailable);
+    let isNearExpiry = false;
+    const end = (billboard as any).Rent_End_Date ?? (billboard as any).rent_end_date;
+    if (end) {
+      try {
+        const endDate = new Date(end);
+        const diffDays = Math.ceil((endDate.getTime() - Date.now()) / 86400000);
+        isNearExpiry = diffDays > 0 && diffDays <= 20;
+      } catch {}
+    }
+    const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.some(s => (
+      (s === 'متاحة' && isAvailable) ||
+      (s === 'محجوز' && isBooked) ||
+      (s === 'قريبة الانتهاء' && isNearExpiry)
+    ));
     const matchesCity = selectedCities.length === 0 || selectedCities.includes((billboard as any).City || billboard.city || '');
     const matchesSize = sizeFilter === 'all' || (((billboard as any).Size || billboard.size || '') === sizeFilter);
     const matchesMunicipality = municipalityFilter === 'all' || (((billboard as any).Municipality || (billboard as any).municipality || '') === municipalityFilter);
@@ -239,13 +272,13 @@ export default function Billboards() {
             
             <MultiSelect
               options={[
-                { label: 'متاح', value: 'متاح' },
-                { label: 'مؤجر', value: 'مؤجر' },
-                { label: 'صيانة', value: 'صيانة' },
+                { label: 'متاحة', value: 'متاحة' },
+                { label: 'قريبة الانتهاء', value: 'قريبة الانتهاء' },
+                { label: 'محجوز', value: 'محجوز' },
               ]}
               value={selectedStatuses}
               onChange={setSelectedStatuses}
-              placeholder="الحالة (متعدد)"
+              placeholder="ا��حالة (متعدد)"
             />
 
             <MultiSelect
@@ -502,6 +535,10 @@ export default function Billboards() {
               <Label>المدينة</Label>
               <Input value={addForm.City || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, City: e.target.value }))} />
             </div>
+            <div>
+              <Label>رقم اللوحة</Label>
+              <Input type="number" value={addForm.ID || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, ID: Number(e.target.value) }))} placeholder="مثال: 123" />
+            </div>
             <div className="sm:col-span-2">
               <Label>أقرب معلم</Label>
               <Input value={addForm.Nearest_Landmark || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, Nearest_Landmark: e.target.value }))} />
@@ -514,9 +551,46 @@ export default function Billboards() {
               <Label>المستوى</Label>
               <Input value={addForm.Level || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, Level: e.target.value }))} />
             </div>
+            <div>
+              <Label>البلدية</Label>
+              <Input value={addForm.Municipality || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, Municipality: e.target.value }))} />
+            </div>
+            <div>
+              <Label>الحالة</Label>
+              <Select value={addForm.Status || 'متاح'} onValueChange={(v) => setAddForm((p: any) => ({ ...p, Status: v }))}>
+                <SelectTrigger><SelectValue placeholder="اختر الحالة" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="متاح">متاحة</SelectItem>
+                  <SelectItem value="محجوز">محجوز</SelectItem>
+                  <SelectItem value="صيانة">صيانة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>إحداثيات GPS</Label>
+              <Input value={addForm.GPS_Coordinates || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, GPS_Coordinates: e.target.value }))} placeholder="lat, lng" />
+            </div>
             <div className="sm:col-span-2">
               <Label>رابط الصورة</Label>
               <Input value={addForm.Image_URL || ''} onChange={(e) => setAddForm((p: any) => ({ ...p, Image_URL: e.target.value }))} />
+              <div className="mt-2">
+                <input type="file" accept="image/*" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const name = `bb_${Date.now()}_${file.name}`;
+                    const { data, error } = await supabase.storage.from('billboards').upload(name, file, { upsert: true });
+                    if (error) throw error;
+                    const { data: pub } = supabase.storage.from('billboards').getPublicUrl(data.path);
+                    const url = pub.publicUrl;
+                    setAddForm((p: any) => ({ ...p, Image_URL: url }));
+                    toast.success('تم رفع الصورة');
+                  } catch (err: any) {
+                    console.error('upload image error', err);
+                    toast.error(err?.message || 'فشل رفع الصورة');
+                  }
+                }} />
+              </div>
             </div>
 
             <div className="sm:col-span-2">
