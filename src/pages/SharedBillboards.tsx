@@ -22,7 +22,8 @@ export default function SharedBillboards() {
     } catch (e:any) {
       // Log full error for debugging and show a readable message to the user
       console.error('load shared billboards', e, { message: e?.message, details: e?.details, hint: e?.hint });
-      toast.error(e?.message || JSON.stringify(e) || 'فشل تحميل اللوحات المشتركة');
+      const msg = e?.message || (typeof e === 'object' ? JSON.stringify(e, Object.getOwnPropertyNames(e)) : String(e));
+      toast.error(msg || 'فشل تحميل اللوحات المشتركة');
     } finally {
       setLoading(false);
     }
