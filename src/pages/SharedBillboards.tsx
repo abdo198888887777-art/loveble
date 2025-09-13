@@ -14,11 +14,11 @@ export default function SharedBillboards() {
   const load = async () => {
     setLoading(true);
     try {
-      // select common column names (lowercase). If your DB uses different column names, adjust accordingly.
-      const cols = 'id,name,size,city,partner_companies,is_partnership,capital,capital_remaining,price';
-      const { data, error } = await supabase.from('billboards').select(cols).eq('is_partnership', true);
+      // Fetch all columns then filter client-side to avoid schema mismatch between environments
+      const { data, error } = await supabase.from('billboards').select('*').limit(1000);
       if (error) throw error;
-      setList(data || []);
+      const listData = Array.isArray(data) ? (data as any[]).filter(d => Boolean(d?.is_partnership || d?.partner_companies || d?.Partner_Companies)) : [];
+      setList(listData || []);
     } catch (e:any) {
       // Log full error for debugging and show a readable message to the user
       console.error('load shared billboards', e, { message: e?.message, details: e?.details, hint: e?.hint });
